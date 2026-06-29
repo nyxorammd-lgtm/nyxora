@@ -5,6 +5,7 @@ REPO="nyxorammd-lgtm/nyxora"
 BINARY="nyxora"
 INSTALL_DIR="/usr/local/bin"
 CONFIG_DIR="/etc/nyxora"
+TAG="v0.2.0"
 
 GREEN='\033[32m'
 YELLOW='\033[33m'
@@ -20,7 +21,7 @@ warn()  { echo -e "  ${YELLOW}△${RESET} $1"; }
 err()   { echo -e "  ${RED}✗${RESET} $1"; }
 
 echo ""
-echo -e "  ${BOLD}${CYAN}NYXORA Installer${RESET} ${DIM}v0.2.0${RESET}"
+echo -e "  ${BOLD}${CYAN}NYXORA Installer${RESET} ${DIM}${TAG}${RESET}"
 echo -e "  ${DIM}Adaptive Tunnel Orchestrator${RESET}"
 echo ""
 
@@ -44,36 +45,20 @@ case "$OS" in
 	*) err "unsupported OS: $OS"; exit 1 ;;
 esac
 
-if command -v curl &>/dev/null; then
-	DOWNLOADER="curl -fsSL"
-elif command -v wget &>/dev/null; then
-	DOWNLOADER="wget -qO-"
-else
-	err "curl or wget required"
-	exit 1
-fi
-
-info "Detecting latest version..."
-API="https://api.github.com/repos/$REPO/releases/latest"
-if command -v curl &>/dev/null; then
-	TAG=$(curl -fsSL "$API" | grep '"tag_name"' | cut -d'"' -f4 2>/dev/null || echo "")
-else
-	TAG=$(wget -qO- "$API" | grep '"tag_name"' | cut -d'"' -f4 2>/dev/null || echo "")
-fi
-
-if [ -z "$TAG" ]; then
-	warn "could not detect latest version, using v0.2.0"
-	TAG="v0.2.0"
-fi
-
-VERSION="${TAG#v}"
 URL="https://github.com/$REPO/releases/download/$TAG/${BINARY}_${OS}_${ARCH}"
 
 info "Downloading NYXORA ${TAG} (${OS}/${ARCH})..."
 if command -v curl &>/dev/null; then
-	curl -fsSL "$URL" -o "/tmp/$BINARY"
-else
+	curl -fsSL "$URL" -o "/tmp/$BINARY" || {
+		warn "direct download failed, trying GitHub API..."
+		DL_URL="https://api.github.com/repos/$REPO/releases/assets/$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$TAG" | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)"
+		curl -fsSL -H "Accept: application/octet-stream" "$DL_URL" -o "/tmp/$BINARY"
+	}
+elif command -v wget &>/dev/null; then
 	wget -q "$URL" -O "/tmp/$BINARY"
+else
+	err "curl or wget required"
+	exit 1
 fi
 
 chmod +x "/tmp/$BINARY"
