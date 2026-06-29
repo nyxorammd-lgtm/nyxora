@@ -1,0 +1,8 @@
+{
+  "name": "wireguard",
+  "version": "1.0",
+  "type": "vpn",
+  "dependencies": ["wireguard", "wireguard-tools"],
+  "port": 51820,
+  "protocol": "udp"
+}

@@ -1,0 +1,8 @@
+{
+  "name": "quic",
+  "version": "1.0",
+  "type": "tunnel",
+  "dependencies": [],
+  "port": 9923,
+  "protocol": "udp"
+}

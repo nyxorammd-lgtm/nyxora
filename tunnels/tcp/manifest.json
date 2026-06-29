@@ -1,0 +1,8 @@
+{
+  "name": "tcp",
+  "version": "1.0",
+  "type": "relay",
+  "dependencies": [],
+  "port": 9924,
+  "protocol": "tcp"
+}

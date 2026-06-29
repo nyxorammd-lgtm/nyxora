@@ -1,0 +1,8 @@
+{
+  "name": "ssh",
+  "version": "1.0",
+  "type": "tunnel",
+  "dependencies": ["ssh"],
+  "port": 22,
+  "protocol": "tcp"
+}
