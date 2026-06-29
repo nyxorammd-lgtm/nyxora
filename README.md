@@ -16,6 +16,7 @@
   <sub>
     <a href="README.md">🇬🇧 English</a> •
     <a href="README.fa.md">🇮🇷 فارسی</a> •
+    <a href="README.ru.md">🇷🇺 Русский</a> •
     <a href="README.zh.md">🇨🇳 中文</a> •
     <a href="README.hi.md">🇮🇳 हिन्दी</a> •
     <a href="README.es.md">🇪🇸 Español</a> •
@@ -26,7 +27,7 @@
 <br>
 
 <h1>NYXORA</h1>
-  <h3>Adaptive Tunnel Orchestrator</h3>
+  <h3>Stop Testing Tunnels One by One — Use NYXORA</h3>
   <p>
     <b>Self-healing multi-transport VPN/tunnel manager</b><br>
     Install on <i>one</i> server. Connect to <i>any</i> remote server via SSH.<br>

@@ -13,6 +13,7 @@
   <sub>
     <a href="README.md">🇬🇧 English</a> •
     <a href="README.fa.md">🇮🇷 فارسی</a> •
+    <a href="README.ru.md">🇷🇺 Русский</a> •
     <a href="README.zh.md">🇨🇳 中文</a> •
     <a href="README.hi.md">🇮🇳 हिन्दी</a> •
     <a href="README.es.md">🇪🇸 Español</a> •
@@ -23,7 +24,7 @@
 <br>
 
 <h1>NYXORA</h1>
-  <h3>ارکستریتور تونل تطبیقی</h3>
+  <h3>تست تونل‌ها رو یکی یکی متوقف کن — از NYXORA استفاده کن</h3>
   <p>
     <b>مدیریت تونل و VPN خود-ترمیم با چندین ترنسپورت</b><br>
     روی <i>یک</i> سرور نصب کن. به <i>هر</i> سرور راه دوری وصل شو.<br>

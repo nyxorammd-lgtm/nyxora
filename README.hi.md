@@ -13,6 +13,7 @@
   <sub>
     <a href="README.md">🇬🇧 English</a> •
     <a href="README.fa.md">🇮🇷 فارسی</a> •
+    <a href="README.ru.md">🇷🇺 Русский</a> •
     <a href="README.zh.md">🇨🇳 中文</a> •
     <a href="README.hi.md">🇮🇳 हिन्दी</a> •
     <a href="README.es.md">🇪🇸 Español</a> •
