@@ -1,0 +1,38 @@
+{
+  "comment": "NYXORA configuration file — /etc/nyxora/config.json",
+  "version": "0.2.0",
+  "mode": "full",
+  "ssh_port": 22,
+  "ssh_user": "root",
+  "all_tunnels_active": false,
+  "enabled_transports": [
+    "wireguard",
+    "ssh",
+    "shadowsocks",
+    "hysteria",
+    "quic"
+  ],
+  "port_overrides": {
+    "wg": 51820,
+    "ss": 8388,
+    "hy": 8444
+  },
+  "multipath": {
+    "mode": "weighted",
+    "check_interval_sec": 10,
+    "failover_threshold": 3
+  },
+  "monitor": {
+    "ping_count": 3,
+    "ping_timeout_sec": 2,
+    "interval_sec": 10
+  },
+  "secrets": {
+    "ss_password": "",
+    "ss_method": "aes-256-gcm",
+    "rathole_token": "",
+    "hysteria_auth": "",
+    "backhaul_token": "",
+    "ipsec_psk": ""
+  }
+}

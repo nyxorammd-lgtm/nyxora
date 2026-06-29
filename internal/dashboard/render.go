@@ -13,34 +13,38 @@ func (t *TUI) render() {
 	t.mu.Unlock()
 
 	out := strings.Builder{}
-	out.WriteString(HOME)
+	out.WriteString(HOME + CLEARLN)
 
 	if provider == nil {
-		out.WriteString(center(" NYXORA", t.width))
-		out.WriteString("\n\n")
-		out.WriteString(center("initializing...", t.width))
+		out.WriteString(topBorder(t.width))
+		out.WriteString(center(catppuccinBase+BOLD+" NYXORA"+RESET, t.width) + "\n")
+		out.WriteString(center(catppuccinSub+DIM+"initializing..."+RESET, t.width) + "\n")
+		out.WriteString(bottomBorder(t.width))
 		fmt.Print(out.String())
 		return
 	}
 
 	status := provider.Status()
+
+	out.WriteString(topBorder(t.width))
 	out.WriteString(t.renderHeader(status))
+	out.WriteString(sepLine(t.width))
 	out.WriteString(t.renderStatusBar(status))
 	out.WriteString(t.renderRemoteHost(status))
 	out.WriteString(t.renderSteps(status))
 	out.WriteString(t.renderTransports(status))
 	out.WriteString(t.renderFailover(status))
-	out.WriteString(t.renderFooter())
+	out.WriteString(bottomBorder(t.width))
 
 	fmt.Print(out.String())
 }
 
 func (t *TUI) renderHeader(status map[string]interface{}) string {
-	header := fmt.Sprintf(" %s%sNYXORA%s  %s%s%s  %s%s%s",
-		PURPLE+BOLD, DOT, RESET,
-		DIM+GRAY, "Adaptive Tunnel Orchestrator", RESET,
-		DIM, "v0.1.0", RESET)
-	return header + "\n" + fmt.Sprintf(" %s%s%s\n", DIM+GRAY, strings.Repeat("━", t.width-2), RESET)
+	header := fmt.Sprintf(" %s%s●%s  %s%s%s %s%s%s",
+		catppuccinBase+BOLD, DOT, RESET,
+		catppuccinBase+BOLD, "NYXORA", RESET,
+		catppuccinSub+DIM, "Adaptive Tunnel Orchestrator", RESET)
+	return header + "\n"
 }
 
 func (t *TUI) renderStatusBar(status map[string]interface{}) string {
@@ -50,30 +54,30 @@ func (t *TUI) renderStatusBar(status map[string]interface{}) string {
 	nodeID, _ := status["node_id"].(string)
 	uptime, _ := status["uptime"].(string)
 
-	statusIcon := GRAY + "●"
+	statusIcon := catppuccinSub + "●"
 	statusLabel := "idle"
 	switch {
 	case connected:
-		statusIcon = GREEN + "●"
+		statusIcon = catppuccinGreen + "●"
 		statusLabel = "connected"
 	case running:
-		statusIcon = YELLOW + "●"
+		statusIcon = catppuccinYellow + "●"
 		statusLabel = "running"
 	}
 
 	result := fmt.Sprintf(" %s%s %s %s  %s%s %s%s  %s%s %s%s\n",
-		CYAN+BOLD, "STATUS", RESET,
+		catppuccinTeal+BOLD, "STATUS", RESET,
 		statusIcon+" "+statusLabel,
-		TEAL, "NODE", RESET,
+		catppuccinMauve, "NODE", RESET,
 		truncateStr(nodeID, 12),
-		BLUE, "UP", RESET,
+		BLUE+BOLD, "UP", RESET,
 		uptime,
 	)
 
 	if connected {
 		result += fmt.Sprintf(" %s%s %s  %s%s %s%s\n",
-			GREEN, "TUNNEL", RESET,
-			active, DIM+GRAY, "(click for details)", RESET,
+			catppuccinGreen, "TUNNEL", RESET,
+			active, catppuccinSub+DIM, "(details)", RESET,
 		)
 	}
 
@@ -90,8 +94,8 @@ func (t *TUI) renderRemoteHost(status map[string]interface{}) string {
 	osInfo, _ := remote["os"].(string)
 	arch, _ := remote["arch"].(string)
 
-	result := fmt.Sprintf("\n %s%sREMOTE HOST%s\n", BOLD, CYAN, RESET)
-	result += fmt.Sprintf("   %s%s %s%s%s\n", BOLD, hostname, GRAY, addr, RESET)
+	result := fmt.Sprintf("\n %s%sREMOTE HOST%s\n", BOLD, catppuccinMauve, RESET)
+	result += fmt.Sprintf("   %s%s %s%s%s\n", BOLD, hostname, catppuccinSub, addr, RESET)
 	result += fmt.Sprintf("   %s%s  %s%s\n", DIM, osInfo, arch, RESET)
 	return result
 }
@@ -102,7 +106,7 @@ func (t *TUI) renderSteps(status map[string]interface{}) string {
 		return ""
 	}
 
-	result := fmt.Sprintf("\n %s%sSETUP STEPS%s\n", BOLD, MAGENTA, RESET)
+	result := fmt.Sprintf("\n %s%sSETUP STEPS%s\n", BOLD, catppuccinMauve, RESET)
 	for _, sRaw := range stepsRaw {
 		s, ok := sRaw.(map[string]interface{})
 		if !ok {
@@ -113,18 +117,18 @@ func (t *TUI) renderSteps(status map[string]interface{}) string {
 		detail, _ := s["detail"].(string)
 		done, _ := s["done"].(bool)
 
-		icon := DIM + "○" + RESET
-		color := GRAY
+		icon := catppuccinSub + "○" + RESET
+		color := catppuccinSub
 		switch stat {
 		case "OK":
-			icon = GREEN + CHECK + RESET
-			color = GREEN
+			icon = catppuccinGreen + CHECK + RESET
+			color = catppuccinGreen
 		case "FAILED":
-			icon = RED + CROSS + RESET
-			color = RED
+			icon = catppuccinRed + CROSS + RESET
+			color = catppuccinRed
 		case "RUNNING":
-			icon = YELLOW + "◉" + RESET
-			color = YELLOW
+			icon = catppuccinYellow + "◉" + RESET
+			color = catppuccinYellow
 		case "WARN":
 			icon = ORANGE + "△" + RESET
 			color = ORANGE
@@ -132,7 +136,7 @@ func (t *TUI) renderSteps(status map[string]interface{}) string {
 
 		detailStr := ""
 		if detail != "" && done {
-			detailStr = fmt.Sprintf(" %s%s%s", DIM+GRAY, detail, RESET)
+			detailStr = fmt.Sprintf(" %s%s%s", DIM+catppuccinSub, detail, RESET)
 		}
 		result += fmt.Sprintf("   %s %s%s%s%s\n", icon, color, name, RESET, detailStr)
 	}
@@ -147,10 +151,10 @@ func (t *TUI) renderTransports(status map[string]interface{}) string {
 
 	active, _ := status["active_transport"].(string)
 
-	result := fmt.Sprintf("\n %s%sTRANSPORTS%s\n", BOLD, CYAN, RESET)
+	result := fmt.Sprintf("\n %s%sTRANSPORTS%s\n", BOLD, catppuccinMauve, RESET)
 	result += fmt.Sprintf(" %s%-12s %-6s %-7s %-6s %-8s %-6s %s%s\n",
-		DIM+GRAY, "NAME", "TYPE", "STATUS", "SCORE", "LATENCY", "LOSS", "BAR", RESET)
-	result += fmt.Sprintf(" %s%s%s\n", DIM+GRAY, strings.Repeat("─", t.width-4), RESET)
+		DIM+catppuccinSub, "NAME", "TYPE", "STATUS", "SCORE", "LATENCY", "LOSS", "BAR", RESET)
+	result += fmt.Sprintf(" %s%s%s\n", DIM+catppuccinSub, strings.Repeat("─", t.width-4), RESET)
 
 	var list []map[string]interface{}
 	for _, r := range transportsRaw {
@@ -172,15 +176,18 @@ func (t *TUI) renderTransports(status map[string]interface{}) string {
 		latency, _ := tr["latency"].(float64)
 		loss, _ := tr["loss"].(float64)
 
-		sColor := GRAY
+		sColor := catppuccinSub
 		sIcon := "○"
 		switch stat {
 		case "active":
-			sColor = GREEN
+			sColor = catppuccinGreen
 			sIcon = "●"
 		case "failed":
-			sColor = RED
+			sColor = catppuccinRed
 			sIcon = "✗"
+		case "testing":
+			sColor = catppuccinYellow
+			sIcon = "◉"
 		}
 
 		bar := scoreBar(score, 12)
@@ -188,7 +195,7 @@ func (t *TUI) renderTransports(status map[string]interface{}) string {
 
 		marker := "  "
 		if name == active {
-			marker = GREEN + "◀ " + RESET
+			marker = catppuccinGreen + "◀ " + RESET
 		}
 
 		result += fmt.Sprintf(" %s%-10s %s %-5s %s%5.1f %6.1fms %4.1f%% %s%s%s\n",
@@ -210,7 +217,7 @@ func (t *TUI) renderFailover(status map[string]interface{}) string {
 		return ""
 	}
 
-	result := fmt.Sprintf("\n %s%sFAILOVER%s\n", BOLD, MAGENTA, RESET)
+	result := fmt.Sprintf("\n %s%sFAILOVER%s\n", BOLD, catppuccinMauve, RESET)
 	var names []string
 	for k := range failoverRaw {
 		names = append(names, k)
@@ -218,12 +225,12 @@ func (t *TUI) renderFailover(status map[string]interface{}) string {
 	sort.Strings(names)
 	for _, name := range names {
 		val, _ := failoverRaw[name].(string)
-		fColor := GREEN
+		fColor := catppuccinGreen
 		switch val {
 		case "degraded":
-			fColor = YELLOW
+			fColor = catppuccinYellow
 		case "down":
-			fColor = RED
+			fColor = catppuccinRed
 		}
 		result += fmt.Sprintf("   %s: %s%s%s\n", name, fColor, val, RESET)
 	}
@@ -231,7 +238,7 @@ func (t *TUI) renderFailover(status map[string]interface{}) string {
 }
 
 func (t *TUI) renderFooter() string {
-	result := fmt.Sprintf("\n %s%s", DIM+GRAY, strings.Repeat("━", t.width-2))
+	result := fmt.Sprintf("\n %s%s", DIM+catppuccinSub, strings.Repeat("━", t.width-2))
 	result += fmt.Sprintf("\n %s%s nyxora connect <ip> --user root --port 22 %s", DIM, ARROW, RESET)
 	result += fmt.Sprintf("\n %s%s ctrl+c to exit %s", DIM, ARROW, RESET)
 	return result

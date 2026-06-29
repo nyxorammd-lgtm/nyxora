@@ -1,24 +1,14 @@
-# Binary
-/nyxora
+nyxora
 nyxora.exe
-
-# Build
-*.out
 *.test
-
-# IDE
-.vscode/
-.idea/
+*.out
+/vendor/
+/dist/
+/release/
+/.idea/
+/.vscode/
 *.swp
 *.swo
-
-# OS
+*~
 .DS_Store
 Thumbs.db
-
-# Config
-/etc/nyxora/
-
-# Temp
-/tmp/
-*.log

@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  nyxora:
+    build: .
+    image: nyxora:latest
+    container_name: nyxora
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /etc/nyxora:/etc/nyxora
+      - /var/log/nyxora:/var/log/nyxora
+    environment:
+      - NYXORA_ALL_ACTIVE=false
+    entrypoint: ["nyxora"]
+    command: ["--help"]
+
+  nyxora-daemon:
+    build: .
+    image: nyxora:latest
+    container_name: nyxora-daemon
+    network_mode: host
+    restart: always
+    volumes:
+      - /etc/nyxora:/etc/nyxora
+      - /var/log/nyxora:/var/log/nyxora
+    environment:
+      - NYXORA_ALL_ACTIVE=false
+    entrypoint: ["nyxora"]
+    command: ["daemon"]

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#CBA6F7"/>
+      <stop offset="100%" style="stop-color:#89B4FA"/>
+    </linearGradient>
+  </defs>
+  <text x="20" y="70" font-family="monospace, Courier" font-size="52" font-weight="bold" fill="url(#g)">NYXORA</text>
+  <text x="22" y="100" font-family="sans-serif" font-size="16" fill="#6C7086">Adaptive Tunnel Orchestrator</text>
+</svg>

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -21,6 +22,8 @@ const (
 	telegramURL    = "https://t.me/NyxoraCore"
 )
 
+const timeConstant = time.Millisecond * 80
+
 type githubRelease struct {
 	TagName string `json:"tag_name"`
 	Assets  []struct {
@@ -30,7 +33,7 @@ type githubRelease struct {
 }
 
 type updateModel struct {
-	state       string // checking, found, notfound, downloading, done, error
+	state       string
 	latestVer   string
 	downloadURL string
 	progress    int
@@ -38,10 +41,20 @@ type updateModel struct {
 	width       int
 	tick        int
 	quitting    bool
+	spinner     spinner.Model
 }
 
+// RunUpdateChecker launches a Bubble Tea TUI that checks GitHub for the latest release,
+// displays version info, and optionally downloads and installs updates.
 func RunUpdateChecker() error {
-	p := tea.NewProgram(updateModel{state: "checking"}, tea.WithAltScreen())
+	s := spinner.New()
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Primary))
+	s.Spinner = spinner.Pulse
+
+	p := tea.NewProgram(updateModel{
+		state:   "checking",
+		spinner: s,
+	}, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
 }
@@ -49,7 +62,10 @@ func RunUpdateChecker() error {
 func (m updateModel) Init() tea.Cmd {
 	return tea.Batch(
 		checkForUpdate(),
-		tickUpdateCmd(),
+		tea.Tick(timeConstant, func(t time.Time) tea.Msg {
+			return updateTickMsg(t)
+		}),
+		m.spinner.Tick,
 	)
 }
 
@@ -88,12 +104,6 @@ type updateErrMsg struct {
 
 type updateTickMsg time.Time
 
-func tickUpdateCmd() tea.Cmd {
-	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
-		return updateTickMsg(t)
-	})
-}
-
 func (m updateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -109,10 +119,18 @@ func (m updateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.state == "done" || m.state == "notfound" || m.state == "error" {
 				return m, tea.Quit
 			}
+		case "1", "2", "3":
+			switch msg.String() {
+			case "1":
+				currentTheme = themes["catppuccin-mocha"]
+			case "2":
+				currentTheme = themes["tokyo-night"]
+			case "3":
+				currentTheme = themes["catppuccin-latte"]
+			}
 		}
 
 	case updateFoundMsg:
-		// Strip leading 'v' if present
 		ver := msg.version
 		ver = strings.TrimPrefix(ver, "v")
 
@@ -121,7 +139,6 @@ func (m updateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.state = "found"
 			m.latestVer = ver
-			// Find binary for current OS/arch
 			arch := runtime.GOARCH
 			osName := runtime.GOOS
 			for _, asset := range msg.assets {
@@ -152,10 +169,17 @@ func (m updateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.state == "downloading" {
 			m.progress = (m.progress + 2) % 100
 		}
-		return m, tickUpdateCmd()
+		return m, tea.Tick(timeConstant, func(t time.Time) tea.Msg {
+			return updateTickMsg(t)
+		})
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
@@ -182,7 +206,6 @@ func downloadUpdate(url string) tea.Cmd {
 			return updateDownloadErrMsg{err: err.Error()}
 		}
 
-		// Make executable and replace current binary
 		tmpFile.Chmod(0755)
 		tmpFile.Close()
 
@@ -206,56 +229,77 @@ func (m updateModel) View() string {
 
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true).Render("  NYXORA Update Checker"))
+	b.WriteString(renderGradient("  NYXORA Update", currentTheme.GradientA, currentTheme.GradientB))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(strings.Repeat("─", 50)))
+	b.WriteString(dimStyle().Render(strings.Repeat("─", 50)))
 	b.WriteString("\n\n")
 
 	switch m.state {
 	case "checking":
-		spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-		idx := m.tick % len(spinner)
-		b.WriteString(fmt.Sprintf("  %s Checking for updates...\n", lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render(spinner[idx])))
+		b.WriteString(fmt.Sprintf("  %s %s\n",
+			primaryStyle().Render(m.spinner.View()),
+			infoStyle().Render("Checking for updates..."),
+		))
 
 	case "found":
-		b.WriteString(fmt.Sprintf("  Current version:  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(currentVersion)))
-		b.WriteString(fmt.Sprintf("  Latest version:   %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render(m.latestVer)))
-		b.WriteString(fmt.Sprintf("  Status:           %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Render("Update available!")))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("  Press Enter to download & install"))
-		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  %s  %s\n",
+			dimStyle().Render("Current version:"),
+			dimStyle().Render(currentVersion),
+		))
+		b.WriteString(fmt.Sprintf("  %s  %s\n",
+			dimStyle().Render("Latest version:"),
+			successStyle().Render(m.latestVer),
+		))
+		b.WriteString(fmt.Sprintf("  %s  %s\n\n",
+			dimStyle().Render("Status:"),
+			warningStyle().Render("Update available!"),
+		))
+		b.WriteString(fmt.Sprintf("  %s\n", accentStyle().Render("Press Enter to download & install")))
 
 	case "notfound":
-		b.WriteString(fmt.Sprintf("  Current version:  %s\n", lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(currentVersion)))
-		b.WriteString(fmt.Sprintf("  Status:           %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("You're up to date!")))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("  Press any key to exit"))
-		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  %s  %s\n",
+			dimStyle().Render("Current version:"),
+			dimStyle().Render(currentVersion),
+		))
+		b.WriteString(fmt.Sprintf("  %s  %s\n\n",
+			dimStyle().Render("Status:"),
+			successStyle().Render("You're up to date!"),
+		))
+		b.WriteString(fmt.Sprintf("  %s\n", accentStyle().Render("Press any key to exit")))
 
 	case "downloading":
-		b.WriteString(fmt.Sprintf("  Downloading v%s...\n\n", m.latestVer))
-		barWidth := 40
-		progress := m.progress * barWidth / 100
-		bar := strings.Repeat("█", progress) + strings.Repeat("░", barWidth-progress)
-		b.WriteString(fmt.Sprintf("  %s %d%%\n", lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render(bar), m.progress))
+		b.WriteString(fmt.Sprintf("  %s v%s...\n\n",
+			infoStyle().Render("Downloading"),
+			m.latestVer,
+		))
+			barWidth := 40
+		bar := renderGradientBar(float64(m.progress), barWidth, currentTheme.GradientA, currentTheme.GradientB)
+		b.WriteString(fmt.Sprintf("  %s %d%%\n", bar, m.progress))
 
 	case "done":
-		b.WriteString(fmt.Sprintf("  %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("Update installed successfully!")))
-		b.WriteString(fmt.Sprintf("  Restart NYXORA to use v%s\n", m.latestVer))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("  Press any key to exit"))
-		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  %s\n\n",
+			successStyle().Render("Update installed successfully!"),
+		))
+		b.WriteString(fmt.Sprintf("  %s v%s\n",
+			dimStyle().Render("Restart NYXORA to use"),
+			m.latestVer,
+		))
+		b.WriteString(fmt.Sprintf("  %s\n", accentStyle().Render("Press any key to exit")))
 
 	case "error":
-		b.WriteString(fmt.Sprintf("  %s\n\n", lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("Update failed:")))
-		b.WriteString(fmt.Sprintf("  %s\n\n", m.err))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("  Press any key to exit"))
-		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  %s\n\n",
+			errorStyle().Render("Update failed:"),
+		))
+		b.WriteString(fmt.Sprintf("  %s\n\n", dimStyle().Render(m.err)))
+		b.WriteString(fmt.Sprintf("  %s\n", accentStyle().Render("Press any key to exit")))
 	}
 
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render(strings.Repeat("─", 50)))
+	b.WriteString(dimStyle().Render(strings.Repeat("─", 50)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render(fmt.Sprintf("  📱 Telegram: %s", telegramURL)))
+	b.WriteString(dimStyle().Render(fmt.Sprintf("  \u200ETelegram: %s", telegramURL)))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true).Render("  enter select  •  q/esc back"))
+	b.WriteString(dimStyle().Italic(true).Render("  enter select  \u2022  q/esc back"))
 	b.WriteString("\n")
 
 	return b.String()

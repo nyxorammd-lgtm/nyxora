@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/nyxora/nyxora/internal/config"
+	"github.com/nyxora/nyxora/internal/interactive"
 	"github.com/nyxora/nyxora/internal/orchestrator"
 )
 
@@ -349,9 +350,20 @@ func cmdDaemon() {
 }
 
 func cmdTUI() {
-	fmt.Println("\n  Launching NYXORA TUI...")
-	// TUI is launched via bubbletea - placeholder for interactive mode
-	// Use 'nyxora dashboard' for live monitoring
+	RunInteractiveTUI()
+}
+
+func RunInteractiveTUI() {
+	choice, err := interactive.RunMenu()
+	if err != nil {
+		log.Fatalf("TUI error: %v", err)
+	}
+	switch choice {
+	case 1:
+		cmdDashboard()
+	case 4:
+		interactive.RunUpdateChecker()
+	}
 }
 
 func cmdUpdate() {

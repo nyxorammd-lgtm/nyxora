@@ -9,50 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// Theme colors
-type Theme struct {
-	Primary    string
-	Secondary  string
-	Accent     string
-	Bg         string
-	Success    string
-	Warning    string
-	Error      string
-	Info       string
-	Border     string
-	Highlight  string
-	Text       string
-	TextDim    string
-	GradientA  string
-	GradientB  string
-}
-
-var themes = map[string]Theme{
-	"dark": {
-		Primary: "141", Secondary: "99", Accent: "212",
-		Success: "46", Warning: "214", Error: "196", Info: "75",
-		Border: "241", Highlight: "212", Text: "255", TextDim: "241",
-		GradientA: "99", GradientB: "141",
-	},
-	"neon": {
-		Primary: "201", Secondary: "51", Accent: "226",
-		Success: "82", Warning: "208", Error: "196", Info: "45",
-		Border: "141", Highlight: "226", Text: "255", TextDim: "240",
-		GradientA: "201", GradientB: "51",
-	},
-	"light": {
-		Primary: "57", Secondary: "93", Accent: "141",
-		Success: "22", Warning: "130", Error: "160", Info: "62",
-		Border: "250", Highlight: "57", Text: "234", TextDim: "250",
-		GradientA: "57", GradientB: "93",
-	},
-}
-
-var currentTheme Theme = themes["dark"]
 
 type tickMsg time.Time
 
@@ -63,7 +23,23 @@ type systemInfoMsg struct {
 	goroutines int
 }
 
+type viewState int
+
+const (
+	viewMenu viewState = iota
+	viewConnect
+	viewDashboard
+	viewServerInfo
+	viewInstall
+	viewUpdate
+	viewDisconnect
+	viewHelp
+	viewTopology
+	viewQuit
+)
+
 type model struct {
+	state         viewState
 	choices       []string
 	cursor        int
 	width         int
@@ -73,6 +49,7 @@ type model struct {
 	bootStep      int
 	bootDone      bool
 	tick          int
+	spinner       spinner.Model
 	theme         string
 	showStatus    bool
 	cpuLoad       float64
@@ -87,9 +64,16 @@ type model struct {
 	lossPercent   float64
 	notification  int
 	keyHint       string
+	connectWizard *connectWizard
+	helpModel     *helpModel
+	topology      *topologyModel
 }
 
 func initialModel() model {
+	s := spinner.New()
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Primary))
+	s.Spinner = spinner.Moon
+
 	return model{
 		choices: []string{
 			"C  Connect to Server",
@@ -98,12 +82,15 @@ func initialModel() model {
 			"N  Install",
 			"U  Check for Updates",
 			"X  Disconnect",
+			"T  Tunnel Topology",
+			"H  Help",
 			"Q  Exit",
 		},
 		cursor:        0,
 		booting:       true,
 		bootStep:      0,
-		theme:         "dark",
+		spinner:       s,
+		theme:         "catppuccin-mocha",
 		activeTunnels: 5,
 		totalTunnels:  11,
 		bestTunnel:    "hysteria",
@@ -116,13 +103,14 @@ func initialModel() model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(tickCmd(), tickSystemCmd(), tea.EnterAltScreen)
-}
-
-func tickCmd() tea.Cmd {
-	return tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
-		return tickMsg(t)
-	})
+	return tea.Batch(
+		tea.Tick(time.Millisecond*60, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		}),
+		tickSystemCmd(),
+		tea.EnterAltScreen,
+		m.spinner.Tick,
+	)
 }
 
 func tickSystemCmd() tea.Cmd {
@@ -163,55 +151,28 @@ func tickSystemCmd() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.quitting = true
-			return m, tea.Quit
-		case "enter":
-			if m.booting && !m.bootDone {
-				return m, nil
-			}
-			return m, tea.Quit
-		case "up", "k":
-			if !m.booting || m.bootDone {
-				m.cursor--
-				if m.cursor < 0 {
-					m.cursor = len(m.choices) - 1
-				}
-				m.updateKeyHint()
-			}
-		case "down", "j":
-			if !m.booting || m.bootDone {
-				m.cursor++
-				if m.cursor >= len(m.choices) {
-					m.cursor = 0
-				}
-				m.updateKeyHint()
-			}
-		case "1", "2", "3":
-			m.cycleTheme()
-		case "f1":
-			m.theme = "dark"
-			currentTheme = themes["dark"]
-		case "f2":
-			m.theme = "neon"
-			currentTheme = themes["neon"]
-		case "f3":
-			m.theme = "light"
-			currentTheme = themes["light"]
-		case "s":
-			m.showStatus = !m.showStatus
+		if m.state == viewConnect && m.connectWizard != nil {
+			return m.connectWizard.Update(msg)
 		}
+		if m.state == viewHelp && m.helpModel != nil {
+			return m.helpModel.Update(msg)
+		}
+		if m.state == viewTopology && m.topology != nil {
+			return m.topology.Update(msg)
+		}
+		return m.handleKeyMsg(msg)
 
 	case tickMsg:
 		m.tick++
 		if m.booting && !m.bootDone {
 			m.bootStep++
-			if m.bootStep > 20 {
+			if m.bootStep > 24 {
 				m.bootDone = true
 			}
 		}
-		return m, tickCmd()
+		return m, tea.Tick(time.Millisecond*60, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		})
 
 	case systemInfoMsg:
 		m.cpuLoad = msg.cpuLoad
@@ -223,39 +184,142 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 	}
 
 	return m, nil
 }
 
-func (m *model) updateKeyHint() {
-	keyMap := map[int]string{
-		0: "Press Enter to connect to a remote server",
-		1: "Press Enter to open live dashboard",
-		2: "Press Enter to view server info",
-		3: "Press Enter to install dependencies",
-		4: "Press Enter to check for updates",
-		5: "Press Enter to disconnect all tunnels",
-		6: "Press Enter to exit NYXORA",
+func (m *model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c", "q":
+		if m.state == viewMenu {
+			m.quitting = true
+			return m, tea.Quit
+		}
+		m.state = viewMenu
+		return m, nil
+
+	case "enter":
+		if m.booting && !m.bootDone {
+			return m, nil
+		}
+		return m.handleMenuSelect()
+
+	case "up", "k":
+		if !m.booting || m.bootDone {
+			m.cursor--
+			if m.cursor < 0 {
+				m.cursor = len(m.choices) - 1
+			}
+			m.updateKeyHint()
+		}
+
+	case "down", "j":
+		if !m.booting || m.bootDone {
+			m.cursor++
+			if m.cursor >= len(m.choices) {
+				m.cursor = 0
+			}
+			m.updateKeyHint()
+		}
+
+	case "1":
+		m.theme = "catppuccin-mocha"
+		currentTheme = themes["catppuccin-mocha"]
+		currentThemeName = "catppuccin-mocha"
+	case "2":
+		m.theme = "tokyo-night"
+		currentTheme = themes["tokyo-night"]
+		currentThemeName = "tokyo-night"
+	case "3":
+		m.theme = "catppuccin-latte"
+		currentTheme = themes["catppuccin-latte"]
+		currentThemeName = "catppuccin-latte"
+
+	case "s":
+		m.showStatus = !m.showStatus
+
+	case "?":
+		m.state = viewHelp
+		m.helpModel = newHelpModel()
+
+	case "t", "T":
+		m.state = viewTopology
+		m.topology = newTopologyModel()
 	}
-	m.keyHint = keyMap[m.cursor]
+
+	return m, nil
 }
 
-func (m *model) cycleTheme() {
-	themeNames := []string{"dark", "neon", "light"}
-	for i, t := range themeNames {
-		if t == m.theme {
-			m.theme = themeNames[(i+1)%len(themeNames)]
-			currentTheme = themes[m.theme]
-			return
-		}
+func (m *model) handleMenuSelect() (tea.Model, tea.Cmd) {
+	switch m.cursor {
+	case 0:
+		m.state = viewConnect
+		m.connectWizard = newConnectWizard()
+	case 1:
+		m.state = viewDashboard
+		return m, tea.Quit
+	case 2:
+		m.state = viewServerInfo
+	case 3:
+		m.state = viewInstall
+	case 4:
+		m.state = viewUpdate
+	case 5:
+		m.state = viewDisconnect
+	case 6:
+		m.state = viewTopology
+		m.topology = newTopologyModel()
+	case 7:
+		m.state = viewHelp
+		m.helpModel = newHelpModel()
+	case 8:
+		m.quitting = true
+		return m, tea.Quit
 	}
+	return m, nil
+}
+
+func (m *model) updateKeyHint() {
+	keyMap := map[int]string{
+		0: "Connect to a remote server",
+		1: "Open live dashboard",
+		2: "View server info",
+		3: "Install dependencies",
+		4: "Check for updates",
+		5: "Disconnect all tunnels",
+		6: "View tunnel topology",
+		7: "Help & keyboard shortcuts",
+		8: "Exit NYXORA",
+	}
+	m.keyHint = keyMap[m.cursor]
 }
 
 func (m model) View() string {
 	if m.quitting {
 		return m.quittingView()
 	}
+
+	switch m.state {
+	case viewConnect:
+		if m.connectWizard != nil {
+			return m.connectWizard.View()
+		}
+	case viewHelp:
+		if m.helpModel != nil {
+			return m.helpModel.View()
+		}
+	case viewTopology:
+		if m.topology != nil {
+			return m.topology.View()
+		}
+	}
+
 	if m.booting && !m.bootDone {
 		return m.bootView()
 	}
@@ -278,36 +342,47 @@ func (m model) bootView() string {
 	var b strings.Builder
 	b.WriteString("\n")
 
-	b.WriteString(renderGradient("  NYXORA", currentTheme.GradientA, currentTheme.GradientB))
+	logoGradient := renderGradientBold(logo[0], currentTheme.GradientA, currentTheme.GradientB)
+	b.WriteString("  " + logoGradient + "\n")
+	for _, line := range logo[1:] {
+		b.WriteString("  " + renderGradient(line, currentTheme.GradientA, currentTheme.GradientB) + "\n")
+	}
+
 	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  Adaptive Tunnel Orchestrator v0.2.0"))
+	b.WriteString(primaryStyle().Render("  NYXORA"))
+	b.WriteString("  " + dimStyle().Render("Adaptive Tunnel Orchestrator v0.2.0"))
 	b.WriteString("\n\n")
 
-	barWidth := 40
-	progress := m.bootStep * barWidth / 20
-	bar := renderProgressBar(progress, barWidth)
-	pct := m.bootStep * 100 / 20
+	barWidth := 42
+	bar := renderGradientBar(float64(m.bootStep)*100/24, barWidth, currentTheme.GradientA, currentTheme.GradientB)
+	pct := m.bootStep * 100 / 24
 
 	steps := []string{
 		"Initializing system...",
 		"Loading transport modules...",
 		"Checking dependencies...",
+		"Configuring WireGuard...",
 		"Setting up scoring engine...",
 		"Preparing multipath scheduler...",
 		"Configuring failover engine...",
 		"Loading dashboard...",
+		"Optimizing routes...",
 		"Ready!",
 	}
 
-	stepIdx := m.bootStep * len(steps) / 20
+	stepIdx := m.bootStep * len(steps) / 24
 	if stepIdx >= len(steps) {
 		stepIdx = len(steps) - 1
 	}
 
-	b.WriteString(fmt.Sprintf("  %s %s\n", bar, dimStyle().Render(fmt.Sprintf("%d%%", pct))))
-	b.WriteString(fmt.Sprintf("  %s %s\n", warningStyle().Render("▸"), steps[stepIdx]))
+	spinnerChar := m.spinner.View()
+	b.WriteString(fmt.Sprintf("  %s  %s\n", bar, dimStyle().Render(fmt.Sprintf("%d%%", pct))))
+	b.WriteString(fmt.Sprintf("  %s %s %s\n",
+		primaryStyle().Render(spinnerChar),
+		warningStyle().Render("▸"),
+		steps[stepIdx]))
 	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  📱 https://t.me/NyxoraCore"))
+	b.WriteString(dimStyle().Render("  \u200Ehttps://t.me/NyxoraCore"))
 	b.WriteString("\n")
 
 	return b.String()
@@ -315,38 +390,44 @@ func (m model) bootView() string {
 
 func (m model) menuView() string {
 	var b strings.Builder
-	b.WriteString("\n")
 
-	b.WriteString(renderGradient("  NYXORA", currentTheme.GradientA, currentTheme.GradientB))
-	b.WriteString("  " + dimStyle().Render("v0.2.0"))
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render(strings.Repeat("─", 56)))
-	b.WriteString("\n\n")
+	title := renderGradient("  NYXORA", currentTheme.GradientA, currentTheme.GradientB)
+	version := dimStyle().Render("v0.2.0")
+
+	header := fmt.Sprintf("%s %s", title, version)
+	separator := dimStyle().Render(strings.Repeat("─", 52))
+
+	content := header + "\n" + separator + "\n\n"
 
 	if m.showStatus {
-		b.WriteString(m.renderStatusBar())
-		b.WriteString("\n")
+		content += m.renderStatusBar() + "\n"
 	}
 
-	b.WriteString(m.renderSystemInfo())
-	b.WriteString("\n")
+	content += m.renderSystemInfo() + "\n"
 
 	for i, choice := range m.choices {
-		b.WriteString(m.renderMenuItem(i, choice))
+		content += m.renderMenuItem(i, choice)
 	}
 
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render(strings.Repeat("─", 56)))
-	b.WriteString("\n")
+	content += "\n" + dimStyle().Render(strings.Repeat("─", 52)) + "\n"
 
 	if m.keyHint != "" {
-		b.WriteString(infoStyle().Render("  "+m.keyHint))
-		b.WriteString("\n")
+		hintBox := subtleBox().
+			Width(50).
+			Render("  " + m.keyHint)
+		content += hintBox + "\n"
 	}
 
-	b.WriteString(dimStyle().Render("  ↑↓ navigate • enter select • 1/2/3 theme • s status • q quit"))
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  📱 https://t.me/NyxoraCore"))
+	navHelp := dimStyle().Render("  \u2191\u2193 navigate  \u23CE select  1/2/3 theme  s status  ? help  q quit")
+	telegram := dimStyle().Render("  \u200Ehttps://t.me/NyxoraCore")
+
+	content += navHelp + "\n" + telegram + "\n"
+
+	menuBox := boxStyle().
+		Width(m.width - 2).
+		Render(content)
+
+	b.WriteString(menuBox)
 	b.WriteString("\n")
 
 	return b.String()
@@ -354,6 +435,7 @@ func (m model) menuView() string {
 
 func (m model) renderStatusBar() string {
 	var b strings.Builder
+
 	lossStyle := successStyle()
 	if m.lossPercent > 5 {
 		lossStyle = warningStyle()
@@ -362,19 +444,20 @@ func (m model) renderStatusBar() string {
 		lossStyle = errorStyle()
 	}
 
-	b.WriteString(fmt.Sprintf("  %s %s %s %s\n",
+	b.WriteString(fmt.Sprintf("  %s %s  %s  %s %s\n",
 		infoStyle().Render("Active:"),
 		successStyle().Render(fmt.Sprintf("%d/%d", m.activeTunnels, m.totalTunnels)),
-		dimStyle().Render("|"),
+		dimStyle().Render("│"),
 		infoStyle().Render("Best:"),
-	))
-	b.WriteString(fmt.Sprintf("  %s %s %s %s\n",
 		successStyle().Render(m.bestTunnel),
-		dimStyle().Render(fmt.Sprintf("(%.1f)", m.bestScore)),
-		dimStyle().Render("|"),
-		lossStyle.Render(fmt.Sprintf("Ping: %.0fms Loss: %.1f%%", m.pingMs, m.lossPercent)),
+	))
+	b.WriteString(fmt.Sprintf("  %s %s  %s\n",
+		successStyle().Render(fmt.Sprintf("Score: %.1f", m.bestScore)),
+		dimStyle().Render("│"),
+		lossStyle.Render(fmt.Sprintf("Ping: %.0fms  Loss: %.1f%%", m.pingMs, m.lossPercent)),
 	))
 	b.WriteString("\n")
+
 	return b.String()
 }
 
@@ -400,289 +483,69 @@ func (m model) renderSystemInfo() string {
 		ramStyle = errorStyle()
 	}
 
-	return fmt.Sprintf("  %s %s %s %s %s %s %s %s\n",
-		dimStyle().Render("CPU"),
+	cpuBar := renderProgressBar(int(m.cpuLoad/8*20), 20)
+	ramBar := renderProgressBar(int(ramPercent/100*20), 20)
+
+	return fmt.Sprintf("  %s %s\n  %s %s\n  %s %s\n",
+		dimStyle().Render("CPU:"),
 		cpuStyle.Render(fmt.Sprintf("%.1f", m.cpuLoad)),
-		dimStyle().Render("|"),
-		dimStyle().Render("RAM"),
-		ramStyle.Render(fmt.Sprintf("%.0f%%", ramPercent)),
-		dimStyle().Render("|"),
-		dimStyle().Render("Go"),
+		dimStyle().Render("    "),
+		cpuBar,
+		dimStyle().Render("RAM:"),
+		ramStyle.Render(fmt.Sprintf("%.0f%%  ", ramPercent)),
+	) + fmt.Sprintf("  %s %s  %s  %s %s\n",
+		dimStyle().Render("RAM:"),
+		ramBar,
+		dimStyle().Render("│"),
+		dimStyle().Render("Go:"),
 		dimStyle().Render(strconv.Itoa(m.goroutines)),
 	)
 }
 
 func (m model) renderMenuItem(i int, choice string) string {
-	cursor := "  "
-	style := menuItemStyle()
+	isSelected := m.cursor == i
 
-	if m.cursor == i {
+	cursor := "  "
+
+	if isSelected {
 		cursor = successStyle().Render("▸ ")
-		style = menuSelectedStyle()
 	}
 
-	icon := choice[:2]
+	if len(choice) < 3 {
+		return ""
+	}
+
+	key := choice[0]
 	label := choice[3:]
 
-	key := ""
-	if len(choice) > 4 {
-		parts := strings.SplitN(choice, "  ", 2)
-		if len(parts) == 2 {
-			icon = parts[0]
-			key = parts[1][:1]
-			label = parts[1][2:]
-		}
+	keyBadge := badgeStyle(string(key)).
+		Background(lipgloss.Color(currentTheme.Muted)).
+		Foreground(lipgloss.Color(currentTheme.Text))
+
+	if isSelected {
+		keyBadge = badgeStyle(string(key)).
+			Background(lipgloss.Color(currentTheme.Highlight)).
+			Foreground(lipgloss.Color(currentTheme.Bg))
 	}
 
-	if m.cursor == i {
-		keyStyle := lipgloss.NewStyle().
+	keyBadgeStr := keyBadge.Render(string(key))
+	labelStr := dimStyle().Render(label)
+
+	if isSelected {
+		labelStr = lipgloss.NewStyle().
 			Foreground(lipgloss.Color(currentTheme.Highlight)).
 			Bold(true).
-			Padding(0, 1).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(currentTheme.Highlight))
-		return fmt.Sprintf("%s%s %s %s\n",
-			cursor,
-			style.Render(icon),
-			style.Render(label),
-			keyStyle.Render(key),
-		)
+			Render(label)
 	}
 
 	return fmt.Sprintf("%s%s %s\n",
 		cursor,
-		dimStyle().Render(icon),
-		dimStyle().Render(label),
+		keyBadgeStr,
+		labelStr,
 	)
 }
 
-func renderGradient(text, colorA, colorB string) string {
-	runes := []rune(text)
-	n := len(runes)
-	if n == 0 {
-		return ""
-	}
-
-	var result strings.Builder
-	for i, r := range runes {
-		t := float64(i) / float64(n-1)
-		r1, _ := strconv.Atoi(colorA)
-		r2, _ := strconv.Atoi(colorB)
-		mid := r1 + int(t*float64(r2-r1))
-		if mid > 255 {
-			mid = 255
-		}
-		if mid < 0 {
-			mid = 0
-		}
-		result.WriteString(lipgloss.NewStyle().
-			Foreground(lipgloss.Color(strconv.Itoa(mid))).
-			Bold(true).
-			Render(string(r)))
-	}
-	return result.String()
-}
-
-func renderProgressBar(filled, width int) string {
-	if filled > width {
-		filled = width
-	}
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
-	return successStyle().Render(bar)
-}
-
-func successStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Success)).Bold(true)
-}
-
-func warningStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Warning)).Bold(true)
-}
-
-func errorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Error)).Bold(true)
-}
-
-func infoStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.Info))
-}
-
-func dimStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(currentTheme.TextDim))
-}
-
-func menuItemStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Padding(0, 1)
-}
-
-func menuSelectedStyle() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(lipgloss.Color(currentTheme.Highlight)).
-		Bold(true).
-		Padding(0, 1)
-}
-
-func RunMenu() (int, error) {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
-	m, err := p.Run()
-	if err != nil {
-		return -1, err
-	}
-	result := m.(model)
-	return result.cursor, nil
-}
-
-type connectWizard struct {
-	step       int
-	addr       string
-	user       string
-	password   string
-	mode       string
-	transports string
-	ports      string
-	width      int
-	height     int
-	cursor     int
-	quitting   bool
-	tick       int
-}
-
-func connectModel() connectWizard {
-	return connectWizard{step: 0, user: "root", mode: "auto"}
-}
-
-func (m connectWizard) Init() tea.Cmd {
-	return tea.Batch(tea.EnterAltScreen, tickCmd())
-}
-
-func (m connectWizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "q":
-			m.quitting = true
-			return m, tea.Quit
-		case "esc":
-			if m.step > 0 {
-				m.step--
-			} else {
-				m.quitting = true
-				return m, tea.Quit
-			}
-		case "enter":
-			if m.step < 4 {
-				m.step++
-			} else {
-				return m, tea.Quit
-			}
-		case "up", "k":
-			m.cursor--
-			if m.cursor < 0 {
-				m.cursor = 2
-			}
-		case "down", "j":
-			m.cursor++
-			if m.cursor > 2 {
-				m.cursor = 0
-			}
-		}
-	case tickMsg:
-		m.tick++
-		return m, tickCmd()
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-	}
-	return m, nil
-}
-
-func (m connectWizard) View() string {
-	if m.quitting {
-		return "\n  Cancelled.\n\n"
-	}
-
-	var b strings.Builder
-	b.WriteString("\n")
-	b.WriteString(renderGradient("  NYXORA Connect", currentTheme.GradientA, currentTheme.GradientB))
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render(strings.Repeat("─", 50)))
-	b.WriteString("\n\n")
-
-	steps := []string{"Address", "User", "Password", "Mode", "Go!"}
-	for i, s := range steps {
-		icon := dimStyle().Render("○")
-		style := dimStyle()
-		if i < m.step {
-			icon = successStyle().Render("●")
-			style = successStyle()
-		} else if i == m.step {
-			icon = warningStyle().Render("◉")
-			style = menuSelectedStyle()
-		}
-		b.WriteString(fmt.Sprintf("  %s %s\n", icon, style.Render(s)))
-	}
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render(strings.Repeat("─", 50)))
-	b.WriteString("\n\n")
-
-	switch m.step {
-	case 0:
-		b.WriteString(menuSelectedStyle().Render("  Remote server address:"))
-		b.WriteString("\n\n")
-		if m.addr == "" {
-			b.WriteString(dimStyle().Render("  > _"))
-		} else {
-			b.WriteString(fmt.Sprintf("  > %s", m.addr))
-		}
-	case 1:
-		b.WriteString(menuSelectedStyle().Render("  SSH username:"))
-		b.WriteString("\n\n")
-		b.WriteString(fmt.Sprintf("  > %s", m.user))
-	case 2:
-		b.WriteString(menuSelectedStyle().Render("  SSH password:"))
-		b.WriteString("\n\n")
-		b.WriteString("  > " + strings.Repeat("*", max(len(m.password), 8)))
-	case 3:
-		b.WriteString(menuSelectedStyle().Render("  Server mode:"))
-		b.WriteString("\n\n")
-		modes := []struct {
-			name string
-			desc string
-			req  string
-		}{
-			{"full", "All 11 tunnels", "2GB+ RAM"},
-			{"lite", "Lightweight", "512MB-2GB"},
-			{"minimal", "SSH + SS only", "<512MB"},
-		}
-		for i, md := range modes {
-			cursor := "  "
-			style := dimStyle()
-			if m.cursor == i {
-				cursor = successStyle().Render("▸ ")
-				style = menuSelectedStyle()
-			}
-			b.WriteString(fmt.Sprintf("  %s%s %s\n", cursor, style.Render(md.name), dimStyle().Render(fmt.Sprintf("(%s) [%s]", md.desc, md.req))))
-		}
-	case 4:
-		b.WriteString(successStyle().Render("  Ready to connect!"))
-		b.WriteString("\n\n")
-		b.WriteString(fmt.Sprintf("  Address:    %s\n", m.addr))
-		b.WriteString(fmt.Sprintf("  User:       %s\n", m.user))
-		b.WriteString(fmt.Sprintf("  Password:   %s\n", strings.Repeat("*", len(m.password))))
-		b.WriteString(fmt.Sprintf("  Mode:       %s\n", m.mode))
-	}
-
-	b.WriteString("\n\n")
-	b.WriteString(dimStyle().Render(strings.Repeat("─", 50)))
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  esc back • enter next • q cancel"))
-	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  📱 https://t.me/NyxoraCore"))
-	b.WriteString("\n")
-
-	return b.String()
-}
-
+// RunTransportStatus displays an interactive table of transport statuses in a Bubble Tea TUI.
 func RunTransportStatus(transports []TransportStatus) error {
 	p := tea.NewProgram(transportStatusModel{transports: transports}, tea.WithAltScreen())
 	_, err := p.Run()
@@ -706,7 +569,11 @@ type TransportStatus struct {
 }
 
 func (m transportStatusModel) Init() tea.Cmd {
-	return tea.Batch(tickCmd())
+	return tea.Batch(
+		tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		}),
+	)
 }
 
 func (m transportStatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -726,10 +593,21 @@ func (m transportStatusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor >= len(m.transports) {
 				m.cursor = 0
 			}
+		case "1", "2", "3":
+			switch msg.String() {
+			case "1":
+				currentTheme = themes["catppuccin-mocha"]
+			case "2":
+				currentTheme = themes["tokyo-night"]
+			case "3":
+				currentTheme = themes["catppuccin-latte"]
+			}
 		}
 	case tickMsg:
 		m.tick++
-		return m, tickCmd()
+		return m, tea.Tick(time.Millisecond*100, func(t time.Time) tea.Msg {
+			return tickMsg(t)
+		})
 	}
 	return m, nil
 }
@@ -746,8 +624,8 @@ func (m transportStatusModel) View() string {
 	b.WriteString(dimStyle().Render(strings.Repeat("─", 62)))
 	b.WriteString("\n\n")
 
-	header := fmt.Sprintf("  %-12s %-6s %-8s %-6s %-8s %-6s %s",
-		"NAME", "PORT", "STATUS", "SCORE", "LATENCY", "LOSS", "BAR")
+	header := fmt.Sprintf("  %-2s %-12s %-6s %-8s %-6s %-8s %-6s %s",
+		"#", "NAME", "PORT", "STATUS", "SCORE", "LATENCY", "LOSS", "BAR")
 	b.WriteString(dimStyle().Bold(true).Render(header))
 	b.WriteString("\n")
 	b.WriteString(dimStyle().Render("  " + strings.Repeat("─", 60)))
@@ -760,9 +638,9 @@ func (m transportStatusModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(dimStyle().Render(strings.Repeat("─", 62)))
 	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  ↑↓ navigate • q/esc back • 1/2/3 theme"))
+	b.WriteString(dimStyle().Render("  \u2191\u2195 navigate  q/esc back  1/2/3 theme"))
 	b.WriteString("\n")
-	b.WriteString(dimStyle().Render("  📱 https://t.me/NyxoraCore"))
+	b.WriteString(dimStyle().Render("  \u200Ehttps://t.me/NyxoraCore"))
 	b.WriteString("\n")
 
 	return b.String()
@@ -773,21 +651,19 @@ func (m transportStatusModel) renderTransportRow(i int, t TransportStatus) strin
 	nameStyle := dimStyle()
 	if m.cursor == i {
 		cursor = successStyle().Render("▸ ")
-		nameStyle = menuSelectedStyle()
+		nameStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color(currentTheme.Highlight)).
+			Bold(true)
 	}
 
-	statusIcon := dimStyle().Render("○")
-	statusStyle := dimStyle()
+	statusIcon := statusIcons["idle"]
 	switch t.Status {
 	case "active":
-		statusIcon = successStyle().Render("●")
-		statusStyle = successStyle()
+		statusIcon = statusIcons["active"]
 	case "testing":
-		statusIcon = warningStyle().Render("◉")
-		statusStyle = warningStyle()
+		statusIcon = statusIcons["testing"]
 	case "failed":
-		statusIcon = errorStyle().Render("✗")
-		statusStyle = errorStyle()
+		statusIcon = statusIcons["failed"]
 	}
 
 	scoreStyle := errorStyle()
@@ -797,55 +673,37 @@ func (m transportStatusModel) renderTransportRow(i int, t TransportStatus) strin
 		scoreStyle = warningStyle()
 	}
 
-	animatedBar := m.renderAnimatedBar(t.Score, t.Name)
+	icon := transportIcons[strings.ToLower(t.Name)]
+	if icon == "" {
+		icon = "●"
+	}
 
-	return fmt.Sprintf("%s%-12s %6d %s%-8s %s   %6.1fms %4.1f%% %s\n",
+	gradientBar := renderGradientBar(t.Score, 15, currentTheme.GradientA, currentTheme.GradientB)
+
+	return fmt.Sprintf("%s%s %-12s %6d %s%-8s %s   %6.1fms %4.1f%% %s\n",
 		cursor,
+		dimStyle().Render(fmt.Sprintf("%2d", i+1)),
 		nameStyle.Render(t.Name),
 		t.Port,
-		statusStyle.Render(statusIcon+" "),
+		statusIcon+" ",
 		t.Status,
 		scoreStyle.Render(fmt.Sprintf("%5.1f", t.Score)),
 		t.Latency,
 		t.Loss,
-		animatedBar,
+		gradientBar,
 	)
 }
 
-func (m transportStatusModel) renderAnimatedBar(score float64, name string) string {
-	width := 15
-	filled := int((score / 100) * float64(width))
-	if filled > width {
-		filled = width
+// RunMenu launches the full interactive Bubble Tea TUI.
+// Returns the selected menu index and any error encountered.
+func RunMenu() (int, error) {
+	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	m, err := p.Run()
+	if err != nil {
+		return -1, err
 	}
-
-	offset := 0
-	for _, c := range name {
-		offset += int(c)
-	}
-	phase := (m.tick + offset) % 4
-
-	bar := ""
-	for i := 0; i < width; i++ {
-		if i < filled {
-			if i == filled-1 && phase < 2 {
-				bar += "▓"
-			} else {
-				bar += "█"
-			}
-		} else {
-			bar += "░"
-		}
-	}
-
-	style := errorStyle()
-	if score >= 70 {
-		style = successStyle()
-	} else if score >= 40 {
-		style = warningStyle()
-	}
-
-	return style.Render(bar)
+	result := m.(model)
+	return result.cursor, nil
 }
 
 func max(a, b int) int {
