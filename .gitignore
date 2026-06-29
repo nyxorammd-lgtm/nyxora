@@ -1,5 +1,6 @@
 nyxora
 nyxora.exe
+quic-server
 *.test
 *.out
 /vendor/

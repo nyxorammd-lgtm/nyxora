@@ -98,13 +98,13 @@
 ## 📦 一行安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/master/install.sh | sudo bash
+curl -L github.com/nyxorammd-lgtm/nyxora/releases/download/v0.2.0/nyxora_linux_amd64 -o /usr/local/bin/nyxora && chmod +x /usr/local/bin/nyxora
 ```
 
 或使用 `wget`：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/master/install.sh | sudo bash
+wget -q https://github.com/nyxorammd-lgtm/nyxora/releases/download/v0.2.0/nyxora_linux_amd64 -O /usr/local/bin/nyxora && chmod +x /usr/local/bin/nyxora
 ```
 
 <details>
