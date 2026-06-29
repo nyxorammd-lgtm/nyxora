@@ -98,13 +98,13 @@
 ## 📦 एक-पंक्ति स्थापना
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/master/install.sh | sudo bash
 ```
 
 या `wget` के साथ:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/main/install.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/master/install.sh | sudo bash
 ```
 
 <details>

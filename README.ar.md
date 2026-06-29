@@ -101,13 +101,13 @@
 ## 📦 تثبيت بسطر واحد
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/master/install.sh | sudo bash
 ```
 
 أو باستخدام `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/main/install.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/nyxorammd-lgtm/nyxora/master/install.sh | sudo bash
 ```
 
 <details>
