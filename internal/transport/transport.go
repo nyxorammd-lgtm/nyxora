@@ -39,4 +39,13 @@ type Info struct {
 	Loss      float64 `json:"packet_loss"`
 	Stability float64 `json:"stability"`
 	Bandwidth int     `json:"bandwidth"`
+	Weight    int     `json:"weight"`
 }
+
+const (
+	CatVPN    = "vpn"
+	CatTunnel = "tunnel"
+	CatRelay  = "relay"
+	CatProxy  = "proxy"
+	CatMesh   = "mesh"
+)

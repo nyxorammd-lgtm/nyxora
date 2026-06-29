@@ -168,16 +168,17 @@ func (t *TUI) render() {
 		statusLabel = "running"
 	}
 
-	out.WriteString(fmt.Sprintf(" %s%s %s %s  %s%s %s  %s%s %s\n",
+	out.WriteString(fmt.Sprintf(" %s%s %s %s  %s%s %s%s  %s%s %s%s\n",
 		CYAN+BOLD, "STATUS", RESET,
 		statusIcon+" "+statusLabel,
 		TEAL, "NODE", RESET,
 		truncate(nodeID, 12),
-		BLUE, "UP", uptime,
+		BLUE, "UP", RESET,
+		uptime,
 	))
 
 	if connected {
-		out.WriteString(fmt.Sprintf(" %s%s %s  %s%s %s\n",
+		out.WriteString(fmt.Sprintf(" %s%s %s  %s%s %s%s\n",
 			GREEN, "TUNNEL", RESET,
 			active, DIM+GRAY, "(click for details)", RESET,
 		))
@@ -191,8 +192,8 @@ func (t *TUI) render() {
 		arch, _ := remote["arch"].(string)
 
 		out.WriteString(fmt.Sprintf("\n %s%sREMOTE HOST%s\n", BOLD, CYAN, RESET))
-		out.WriteString(fmt.Sprintf("   %s%s %s%s\n", BOLD, hostname, GRAY, addr, RESET))
-		out.WriteString(fmt.Sprintf("   %s%s  %s%s  %s\n", DIM, osInfo, arch, RESET))
+		out.WriteString(fmt.Sprintf("   %s%s %s%s%s\n", BOLD, hostname, GRAY, addr, RESET))
+		out.WriteString(fmt.Sprintf("   %s%s  %s%s\n", DIM, osInfo, arch, RESET))
 	}
 
 	// ── Steps Wizard ──
@@ -291,14 +292,13 @@ func (t *TUI) render() {
 				marker = GREEN + "◀ " + RESET
 			}
 
-			out.WriteString(fmt.Sprintf(" %s%-10s %s %-5s %s%s%-5s %s%5.1f %s%6.1fms %s%4.1f%% %s%s%s\n",
+			out.WriteString(fmt.Sprintf(" %s%-10s %s %-5s %s%5.1f %6.1fms %4.1f%% %s%s%s\n",
 				marker,
 				BOLD+name+RESET,
 				DIM+typ+RESET,
 				sColor+sIcon+RESET,
-				scColor, fmt.Sprintf("%.1f", score), RESET,
-				latency,
-				loss,
+				scColor, score,
+				latency, loss,
 				scColor, bar, RESET,
 			))
 		}

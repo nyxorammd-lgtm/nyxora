@@ -3,20 +3,25 @@ package transport
 import (
 	"fmt"
 	"log"
+	"os/exec"
 	"sort"
 	"sync"
+	"time"
 )
 
 type Manager struct {
 	mu         sync.RWMutex
 	transports map[string]Transport
-	active     string
+	active     map[string]bool
+	weights    map[string]int
 	allActive  bool
 }
 
 func NewManager(allActive bool) *Manager {
 	return &Manager{
 		transports: make(map[string]Transport),
+		active:     make(map[string]bool),
+		weights:    make(map[string]int),
 		allActive:  allActive,
 	}
 }
@@ -25,6 +30,12 @@ func (m *Manager) Register(t Transport) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.transports[t.Name()] = t
+	for _, meta := range TunnelRegistry {
+		if meta.Name == t.Name() {
+			m.weights[t.Name()] = meta.Weight
+			break
+		}
+	}
 	log.Printf("[transport] registered: %s (%s)", t.Name(), t.Type())
 }
 
@@ -41,6 +52,7 @@ func (m *Manager) List() []Info {
 	var list []Info
 	for _, t := range m.transports {
 		metrics := t.Metrics()
+		weight := m.weights[t.Name()]
 		list = append(list, Info{
 			Name:      t.Name(),
 			Type:      t.Type(),
@@ -51,11 +63,37 @@ func (m *Manager) List() []Info {
 			Loss:      metrics.PacketLoss,
 			Stability: metrics.Stability,
 			Bandwidth: metrics.Bandwidth,
+			Weight:    weight,
 		})
 	}
 	sort.Slice(list, func(i, j int) bool {
 		return list[i].Score > list[j].Score
 	})
+	return list
+}
+
+func (m *Manager) ActiveList() []Info {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var list []Info
+	for name, t := range m.transports {
+		if !m.active[name] {
+			continue
+		}
+		metrics := t.Metrics()
+		list = append(list, Info{
+			Name:      t.Name(),
+			Type:      t.Type(),
+			Status:    t.Status(),
+			Score:     t.Score(),
+			Latency:   metrics.LatencyMs,
+			Jitter:    metrics.JitterMs,
+			Loss:      metrics.PacketLoss,
+			Stability: metrics.Stability,
+			Bandwidth: metrics.Bandwidth,
+			Weight:    m.weights[name],
+		})
+	}
 	return list
 }
 
@@ -69,7 +107,9 @@ func (m *Manager) ConnectAll(remoteAddr string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	log.Printf("[manager] testing all transports to %s", remoteAddr)
+	log.Printf("[manager] probing %s...", remoteAddr)
+	latency, loss := probeRemote(remoteAddr)
+	log.Printf("[manager] remote base latency: %.1fms, loss: %.1f%%", latency, loss)
 
 	type candidate struct {
 		t     Transport
@@ -77,6 +117,8 @@ func (m *Manager) ConnectAll(remoteAddr string) error {
 	}
 
 	var candidates []candidate
+	log.Printf("[manager] testing all registered transports to %s", remoteAddr)
+
 	for name, t := range m.transports {
 		log.Printf("[manager] trying %s...", name)
 		err := t.Connect(remoteAddr)
@@ -98,46 +140,127 @@ func (m *Manager) ConnectAll(remoteAddr string) error {
 		return candidates[i].score > candidates[j].score
 	})
 
-	best := candidates[0]
-	m.active = best.t.Name()
+	if m.allActive {
+		for _, c := range candidates {
+			m.active[c.t.Name()] = true
+		}
+		log.Printf("[manager] all-active: %d transports active", len(candidates))
 
-	if !m.allActive {
+		for i, c := range candidates {
+			if i == 0 {
+				log.Printf("[manager] primary: %s (score: %.1f)", c.t.Name(), c.score)
+			}
+		}
+	} else {
+		best := candidates[0]
+		m.active[best.t.Name()] = true
 		for i, c := range candidates {
 			if i > 0 {
-				log.Printf("[manager] disconnecting %s (not selected)", c.t.Name())
 				c.t.Disconnect()
 			}
 		}
+		log.Printf("[manager] selected: %s (score: %.1f)", best.t.Name(), best.score)
 	}
 
-	log.Printf("[manager] active transport: %s (score: %.1f)", best.t.Name(), best.score)
 	return nil
+}
+
+func (m *Manager) SetAllActive(active bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allActive = active
+}
+
+func (m *Manager) IsAllActive() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.allActive
+}
+
+func (m *Manager) Activate(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.transports[name]; ok {
+		m.active[name] = true
+		return true
+	}
+	return false
+}
+
+func (m *Manager) Deactivate(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.active, name)
+}
+
+func (m *Manager) IsActive(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.active[name]
+}
+
+func (m *Manager) ActiveNames() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var names []string
+	for name := range m.active {
+		names = append(names, name)
+	}
+	return names
+}
+
+func (m *Manager) ActiveCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.active)
+}
+
+func (m *Manager) GetWeights() map[string]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	w := make(map[string]int)
+	for k, v := range m.weights {
+		w[k] = v
+	}
+	return w
+}
+
+func (m *Manager) SetWeight(name string, weight int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.weights[name] = weight
+}
+
+func (m *Manager) NormalizeWeights() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var total int
+	for _, w := range m.weights {
+		total += w
+	}
+	if total == 0 {
+		return
+	}
+	for name := range m.weights {
+		m.weights[name] = (m.weights[name] * 100) / total
+	}
 }
 
 func (m *Manager) DisconnectAll() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for name, t := range m.transports {
-		if err := t.Disconnect(); err != nil {
-			log.Printf("[transport] %s disconnect error: %v", name, err)
+		if m.active[name] {
+			t.Disconnect()
 		}
 	}
-	m.active = ""
+	m.active = make(map[string]bool)
 }
 
-func (m *Manager) Active() string {
+func (m *Manager) ActiveCount_() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.active
-}
-
-func (m *Manager) ActiveTransport() Transport {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.active == "" {
-		return nil
-	}
-	return m.transports[m.active]
+	return fmt.Sprintf("%d/%d", len(m.active), len(m.transports))
 }
 
 func (m *Manager) bestLocked() (Transport, float64) {
@@ -159,4 +282,33 @@ func (m *Manager) RefreshScores() {
 	for _, t := range m.transports {
 		t.Score()
 	}
+}
+
+func probeRemote(addr string) (latency, loss float64) {
+	var rtts []float64
+	var lossCount float64
+	count := 4
+
+	for i := 0; i < count; i++ {
+		start := time.Now()
+		cmd := exec.Command("ping", "-c", "1", "-W", "2", addr)
+		if err := cmd.Run(); err == nil {
+			rtt := time.Since(start).Seconds() * 1000
+			rtts = append(rtts, rtt)
+		} else {
+			lossCount++
+		}
+	}
+
+	loss = (lossCount / float64(count)) * 100
+	if len(rtts) == 0 {
+		return 999, 100
+	}
+
+	var sum float64
+	for _, r := range rtts {
+		sum += r
+	}
+	latency = sum / float64(len(rtts))
+	return
 }

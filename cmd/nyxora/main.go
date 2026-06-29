@@ -48,7 +48,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println(`NYXORA  -  Adaptive Tunnel Orchestrator
+	fmt.Print(`NYXORA  -  Adaptive Tunnel Orchestrator
 
 USAGE
   nyxora install                    Check dependencies & setup directories

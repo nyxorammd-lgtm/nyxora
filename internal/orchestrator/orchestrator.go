@@ -16,6 +16,7 @@ import (
 	"github.com/nyxora/nyxora/internal/dashboard"
 	"github.com/nyxora/nyxora/internal/failover"
 	"github.com/nyxora/nyxora/internal/monitor"
+	"github.com/nyxora/nyxora/internal/multipath"
 	"github.com/nyxora/nyxora/internal/packager"
 	"github.com/nyxora/nyxora/internal/remote"
 	"github.com/nyxora/nyxora/internal/routing"
@@ -25,12 +26,13 @@ import (
 type Phase string
 
 const (
-	PhaseInit      Phase = "initializing"
+	PhaseInit       Phase = "initializing"
 	PhaseConnecting Phase = "connecting"
-	PhaseSetup     Phase = "setting up remote"
-	PhaseTunnel    Phase = "establishing tunnel"
-	PhaseActive    Phase = "active"
-	PhaseFailed    Phase = "failed"
+	PhaseSetup      Phase = "setting up remote"
+	PhaseTunnel     Phase = "establishing tunnel"
+	PhaseMultipath  Phase = "multipath active"
+	PhaseActive     Phase = "active"
+	PhaseFailed     Phase = "failed"
 )
 
 type StepStatus struct {
@@ -49,6 +51,7 @@ type Orchestrator struct {
 	fail        *failover.Failover
 	pkg         *packager.Packager
 	tui         *dashboard.TUI
+	scheduler   *multipath.Scheduler
 
 	remoteHost  *remote.Host
 	localNodeID string
@@ -72,6 +75,7 @@ func New(cfg *config.Config) *Orchestrator {
 		fail:        failover.NewFailover(cfg.FailoverInterval),
 		pkg:         packager.NewPackager(cfg.DataDir),
 		tui:         dashboard.NewTUI(2),
+		scheduler:   multipath.NewScheduler(),
 		localNodeID: generateNodeID(),
 		phase:       PhaseInit,
 		startTime:   time.Now(),
@@ -86,26 +90,40 @@ func (o *Orchestrator) Init() error {
 		return fmt.Errorf("create data dir: %w", err)
 	}
 
-	transports := []transport.Transport{
+	allTransports := []transport.Transport{
 		transport.NewWireGuard(),
-		transport.NewQUIC(),
+		transport.NewOpenVPN(),
 		transport.NewSSH(),
-		transport.NewTCP(),
+		transport.NewQUIC(),
+		transport.NewFRP(),
+		transport.NewRathole(),
+		transport.NewCloudflare(),
+		transport.NewIPsec(),
+		transport.NewShadowSOCKS(),
+		transport.NewHysteria(),
+		transport.NewBackhaul(),
 	}
-	for _, t := range transports {
+
+	for _, t := range allTransports {
 		o.transportM.Register(t)
+	}
+
+	for _, meta := range transport.ListTunnels() {
+		o.scheduler.AddPath(meta.Name, meta.Type, meta.Weight)
 	}
 
 	o.fail.OnFailover(func(from, to string) {
 		log.Printf("[orchestrator] *** FAILOVER: %s -> %s ***", from, to)
 		o.routeEngine.SetCurrent(to)
+		o.scheduler.RecordFailover()
 	})
 
 	o.fail.OnRecover(func(name string) {
 		log.Printf("[orchestrator] *** RECOVER: %s healthy ***", name)
 	})
 
-	log.Printf("[orchestrator] initialized with %d transports", len(transports))
+	log.Printf("[orchestrator] initialized with %d transports, %d paths",
+		len(allTransports), len(transport.ListTunnels()))
 	return nil
 }
 
@@ -120,7 +138,6 @@ func (o *Orchestrator) addStep(name, status, detail string) {
 	o.mu.Lock()
 	o.steps = append(o.steps, step)
 	o.mu.Unlock()
-
 	if o.onStepUpdate != nil {
 		o.onStepUpdate(step)
 	}
@@ -138,18 +155,16 @@ func (o *Orchestrator) ConnectToRemote(addr string, port int, user, password str
 
 	o.remoteHost = remote.NewHost(addr, port, user, password)
 
-	// Step 1: Ping
-	o.addStep("Pinging remote server", "RUNNING", fmt.Sprintf("%s ...", addr))
+	o.addStep("Pinging remote server", "RUNNING", "")
 	lat, loss := o.remoteHost.Ping(4)
 	if loss > 80 {
-		o.addStep("Pinging remote server", "FAILED", fmt.Sprintf("packet loss: %.0f%%", loss))
+		o.addStep("Pinging remote server", "FAILED", fmt.Sprintf("loss: %.0f%%", loss))
 		o.phase = PhaseFailed
-		return fmt.Errorf("remote unreachable: %.0f%% packet loss", loss)
+		return fmt.Errorf("remote unreachable: %.0f%% loss", loss)
 	}
-	o.addStep("Pinging remote server", "OK", fmt.Sprintf("%.0fms latency, %.0f%% loss", lat, loss))
+	o.addStep("Pinging remote server", "OK", fmt.Sprintf("%.0fms, %.0f%% loss", lat, loss))
 
-	// Step 2: SSH
-	o.addStep("SSH authentication", "RUNNING", fmt.Sprintf("%s@%s:%d", user, addr, port))
+	o.addStep("SSH authentication", "RUNNING", "")
 	msg, ok := o.remoteHost.CheckConnectivity()
 	if !ok {
 		o.addStep("SSH authentication", "FAILED", msg)
@@ -158,62 +173,56 @@ func (o *Orchestrator) ConnectToRemote(addr string, port int, user, password str
 	}
 	o.addStep("SSH authentication", "OK", msg)
 
-	// Step 3: OS detection
 	o.phase = PhaseSetup
 	o.addStep("Detecting OS", "RUNNING", "")
 	if err := o.remoteHost.DetectOS(); err != nil {
 		o.addStep("Detecting OS", "FAILED", err.Error())
 		o.phase = PhaseFailed
-		return fmt.Errorf("detect os: %w", err)
+		return err
 	}
-	o.addStep("Detecting OS", "OK",
-		fmt.Sprintf("%s | %s", o.remoteHost.OSInfo(), o.remoteHost.Arch()))
+	o.addStep("Detecting OS", "OK", fmt.Sprintf("%s | %s", o.remoteHost.OSInfo(), o.remoteHost.Arch()))
 
-	// Step 4: Install dependencies
-	o.addStep("Installing dependencies", "RUNNING", "wireguard, curl, ncat ...")
-	deps := []struct {
-		name string
-		pkg  string
-	}{
-		{"wireguard", "wireguard"},
-		{"curl", "curl"},
-		{"ncat", "ncat"},
-	}
-	var failed []string
-	for _, dep := range deps {
-		if !o.remoteHost.CheckTool(dep.name) {
-			log.Printf("[orchestrator] installing %s on remote...", dep.pkg)
-			if err := o.remoteHost.InstallTool(dep.pkg); err != nil {
-				log.Printf("[orchestrator] install %s failed: %v", dep.pkg, err)
-				failed = append(failed, dep.name)
-			}
+	o.addStep("Installing dependencies", "RUNNING", "")
+	var failedDeps []string
+	for _, meta := range transport.ListTunnels() {
+		if meta.Binary == "" {
+			continue
+		}
+		if o.remoteHost.CheckTool(meta.Binary) {
+			continue
+		}
+		script := transport.InstallScript(meta.Name)
+		if script == "" {
+			continue
+		}
+		log.Printf("[orchestrator] installing %s on remote...", meta.Name)
+		_, err := o.remoteHost.SSHCommand(script)
+		if err != nil {
+			failedDeps = append(failedDeps, meta.Name)
+			log.Printf("[orchestrator] %s install failed: %v", meta.Name, err)
 		}
 	}
-	if len(failed) > 0 {
-		o.addStep("Installing dependencies", "WARN",
-			fmt.Sprintf("partial: %s failed", strings.Join(failed, ", ")))
+	if len(failedDeps) > 0 {
+		o.addStep("Installing dependencies", "WARN", fmt.Sprintf("%d failed: %s", len(failedDeps), strings.Join(failedDeps, ", ")))
 	} else {
-		o.addStep("Installing dependencies", "OK", "all dependencies installed")
+		o.addStep("Installing dependencies", "OK", "all tunnel dependencies ready")
 	}
 
-	// Step 5: Generate keys
 	o.phase = PhaseTunnel
-	o.addStep("Generating keys", "RUNNING", "")
+	o.addStep("Generating WireGuard keys", "RUNNING", "")
 	localPriv, localPub := o.generateLocalWGKey()
+	o.addStep("Generating WireGuard keys", "OK", fmt.Sprintf("pub: %s...", localPub[:16]))
 
-	// Step 6: Setup WireGuard on remote
-	o.addStep("Setting up remote WireGuard", "RUNNING", "")
+	o.addStep("Setting up remote WG endpoint", "RUNNING", "")
 	remotePub, err := remote.SetupWireGuardRemote(o.remoteHost, localPub, 51820)
 	if err != nil {
-		o.addStep("Setting up remote WireGuard", "FAILED", err.Error())
+		o.addStep("Setting up remote WG endpoint", "FAILED", err.Error())
 		o.phase = PhaseFailed
-		return fmt.Errorf("remote wg setup: %w", err)
+		return err
 	}
-	o.addStep("Setting up remote WireGuard", "OK",
-		fmt.Sprintf("pubkey: %s...", remotePub[:16]))
+	o.addStep("Setting up remote WG endpoint", "OK", fmt.Sprintf("pub: %s...", remotePub[:16]))
 
-	// Step 7: Setup local WireGuard
-	o.addStep("Setting up local WireGuard", "RUNNING", "")
+	o.addStep("Setting up local WG endpoint", "RUNNING", "")
 	remoteIP, err := remote.GetRemotePublicIP(o.remoteHost)
 	if err != nil {
 		remoteIP = addr
@@ -225,24 +234,29 @@ func (o *Orchestrator) ConnectToRemote(addr string, port int, user, password str
 		"interface":   "nyxora0",
 	})
 	if err := localWG.Connect(remoteIP); err != nil {
-		o.addStep("Setting up local WireGuard", "FAILED", err.Error())
+		o.addStep("Setting up local WG endpoint", "FAILED", err.Error())
 		o.phase = PhaseFailed
-		return fmt.Errorf("local wg setup: %w", err)
+		return err
 	}
-	o.transportM.Register(localWG)
-	o.addStep("Setting up local WireGuard", "OK", "interface nyxora0 ready")
+	o.addStep("Setting up local WG endpoint", "OK", "interface nyxora0 ready")
 
-	// Step 8: Test tunnel
-	o.phase = PhaseActive
 	o.connected = true
+	o.phase = PhaseMultipath
+
+	if o.cfg.AllTunnelsActive {
+		o.addStep("Multipath mode", "OK", "all tunnels active simultaneously")
+		o.transportM.SetAllActive(true)
+		o.transportM.ConnectAll(remoteIP)
+	} else {
+		o.addStep("Smart mode", "OK", "best tunnel selected automatically")
+	}
 
 	o.addStep("Tunnel established", "OK",
-		fmt.Sprintf("%s <-> %s via WireGuard", o.localNodeID[:8], o.remoteHost.Hostname()))
+		fmt.Sprintf("%s <-> %s (%s)", o.localNodeID[:8], o.remoteHost.Hostname(), remoteIP))
 
 	log.Printf("[orchestrator] tunnel active: %s <-> %s (%s)",
 		o.localNodeID[:8], o.remoteHost.Hostname(), remoteIP)
 
-	// Start monitoring
 	o.routeEngine.SetCurrent("wireguard")
 	go o.startMonitoring(remoteIP)
 
@@ -261,24 +275,15 @@ func (o *Orchestrator) generateLocalWGKey() (priv, pub string) {
 			}
 		}
 	}
-	priv = fmt.Sprintf("nyxora-local-key-%d", time.Now().UnixNano())
-	pub = fmt.Sprintf("nyxora-local-pub-%d", time.Now().UnixNano())
+	priv = fmt.Sprintf("nyx-local-key-%d", time.Now().UnixNano())
+	pub = fmt.Sprintf("nyx-local-pub-%d", time.Now().UnixNano())
 	return
 }
 
-func commandExists(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
-func (o *Orchestrator) SSHCommand(cmd string) (string, error) {
-	if o.remoteHost == nil {
-		return "", fmt.Errorf("no remote host")
-	}
-	return o.remoteHost.SSHCommand(cmd)
-}
-
 func (o *Orchestrator) startMonitoring(remoteAddr string) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		if !o.running && !o.connected {
 			return
@@ -286,22 +291,34 @@ func (o *Orchestrator) startMonitoring(remoteAddr string) {
 
 		lat, loss := o.remoteHost.Ping(2)
 
-		info := o.transportM.List()
-		for _, t := range info {
-			o.routeEngine.Update(t.Name, t.Type, lat, 0, loss, 1.0, t.Bandwidth)
-			o.fail.Update(t.Name, lat, loss)
+		for _, info := range o.transportM.List() {
+			o.routeEngine.Update(info.Name, info.Type, lat, info.Jitter, loss, info.Stability, info.Bandwidth)
+			o.fail.Update(info.Name, lat, loss)
+			o.scheduler.UpdatePath(info.Name, info.Score, lat, loss, info.Bandwidth)
+		}
+
+		if o.cfg.AllTunnelsActive {
+			weights := o.scheduler.Distribution()
+			for name, w := range weights {
+				o.transportM.SetWeight(name, w)
+			}
 		}
 
 		best := o.routeEngine.BestPath()
 		current := o.routeEngine.Current()
-		if best != nil && best.Name != current && current != "" && best.Score-o.getCurrentScore(current) > 15 {
-			log.Printf("[orchestrator] failover: %s -> %s", current, best.Name)
-			if cb := o.fail.GetOnFailover(); cb != nil {
-				cb(current, best.Name)
+		if best != nil && best.Name != current && current != "" {
+			diff := best.Score - o.getCurrentScore(current)
+			if diff > 15 {
+				log.Printf("[orchestrator] failover: %s (%.1f) -> %s (%.1f)",
+					current, o.getCurrentScore(current), best.Name, best.Score)
+				if cb := o.fail.GetOnFailover(); cb != nil {
+					cb(current, best.Name)
+				}
+				o.scheduler.RecordFailover()
 			}
 		}
 
-		time.Sleep(10 * time.Second)
+		<-ticker.C
 	}
 }
 
@@ -332,6 +349,8 @@ func (o *Orchestrator) Start() error {
 
 	go o.fail.Start()
 
+	log.Printf("[orchestrator] multipath scheduler: %s", o.scheduler.String())
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
@@ -356,7 +375,7 @@ func (o *Orchestrator) Stop() {
 	if o.remoteHost != nil {
 		remote.TeardownRemote(o.remoteHost, "nyxora0")
 	}
-	log.Printf("[orchestrator] stopped")
+	log.Printf("[orchestrator] stopped (uptime: %s)", time.Since(o.startTime).Round(time.Second))
 }
 
 func (o *Orchestrator) Status() map[string]interface{} {
@@ -365,9 +384,10 @@ func (o *Orchestrator) Status() map[string]interface{} {
 		"connected":        o.connected,
 		"phase":            string(o.phase),
 		"node_id":          o.localNodeID,
-		"active_transport": o.transportM.Active(),
+		"active_transport": o.transportM.ActiveNames(),
+		"all_active":       o.cfg.AllTunnelsActive,
 		"mode":             "single-side",
-		"uptime":           time.Since(o.startTime).String(),
+		"uptime":           time.Since(o.startTime).Round(time.Second).String(),
 	}
 
 	if o.remoteHost != nil {
@@ -383,13 +403,16 @@ func (o *Orchestrator) Status() map[string]interface{} {
 	var transports []map[string]interface{}
 	for _, info := range o.transportM.List() {
 		transports = append(transports, map[string]interface{}{
-			"name":    info.Name,
-			"type":    info.Type,
-			"status":  info.Status,
-			"score":   info.Score,
-			"latency": info.Latency,
-			"jitter":  info.Jitter,
-			"loss":    info.Loss,
+			"name":      info.Name,
+			"type":      info.Type,
+			"status":    info.Status,
+			"score":     info.Score,
+			"latency":   info.Latency,
+			"jitter":    info.Jitter,
+			"loss":      info.Loss,
+			"stable":    info.Stability,
+			"bandwidth": info.Bandwidth,
+			"weight":    info.Weight,
 		})
 	}
 	status["transports"] = transports
@@ -412,6 +435,16 @@ func (o *Orchestrator) Status() map[string]interface{} {
 		}
 	}
 	status["failover"] = failoverStatus
+
+	status["multipath"] = map[string]interface{}{
+		"active":     o.scheduler.Stats().ActivePaths,
+		"total":      len(transport.ListTunnels()),
+		"best":       o.scheduler.Stats().BestPath,
+		"failovers":  o.scheduler.Stats().FailoverCount,
+		"bandwidth":  o.scheduler.AggregateBandwidth(),
+		"mode":       "weighted",
+		"paths":      o.scheduler.AllPaths(),
+	}
 
 	o.mu.Lock()
 	steps := make([]StepStatus, len(o.steps))
@@ -436,4 +469,7 @@ func generateNodeID() string {
 	return fmt.Sprintf("nyx-%x", b)
 }
 
-
+func commandExists(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
