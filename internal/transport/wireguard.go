@@ -93,6 +93,17 @@ func (w *WireGuard) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	if commandExists("wg-quick") {
+		down := exec.Command("wg-quick", "down", w.iface)
+		down.Run()
+		up := exec.Command("wg-quick", "up", w.iface)
+		if out, err := up.CombinedOutput(); err != nil {
+			log.Printf("[wireguard] wg-quick up failed: %v\n%s", err, string(out))
+		} else {
+			log.Printf("[wireguard] wg-quick up %s success", w.iface)
+		}
+	}
+
 	w.configPath = cfgPath
 	w.status = StatusActive
 	log.Printf("[wireguard] connected to %s via %s", remoteAddr, w.iface)
@@ -182,6 +193,7 @@ func (w *WireGuard) generateConfig(remoteAddr string) string {
 	if localAddr == "" {
 		localAddr = "10.100.0.2/24"
 	}
+	subnet := extractSubnet(localAddr)
 
 	return fmt.Sprintf(`[Interface]
 PrivateKey = %s
@@ -192,9 +204,20 @@ MTU = 1420
 [Peer]
 PublicKey = %s
 Endpoint = %s
-AllowedIPs = 0.0.0.0/0, ::/0
+AllowedIPs = 10.100.%d.0/24
 PersistentKeepalive = 25
-`, privateKey, localAddr, pubKey, formatEndpoint(remoteAddr, 51820))
+`, privateKey, localAddr, pubKey, formatEndpoint(remoteAddr, 51820), subnet)
+}
+
+func extractSubnet(addr string) int {
+	parts := strings.Split(addr, ".")
+	if len(parts) >= 3 {
+		var n int
+		if _, err := fmt.Sscanf(parts[2], "%d", &n); err == nil && n >= 0 && n <= 255 {
+			return n
+		}
+	}
+	return 0
 }
 
 func formatEndpoint(addr string, port int) string {

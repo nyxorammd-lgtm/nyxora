@@ -37,12 +37,14 @@ PrivateKey = %s
 Address = 10.100.%d.1/24
 ListenPort = %d
 MTU = 1420
+PostUp = iptables -I INPUT -i %s -j ACCEPT 2>/dev/null; ip6tables -I INPUT -i %s -j ACCEPT 2>/dev/null
+PostDown = iptables -D INPUT -i %s -j ACCEPT 2>/dev/null; ip6tables -D INPUT -i %s -j ACCEPT 2>/dev/null
 
 [Peer]
 PublicKey = %s
 AllowedIPs = 10.100.%d.2/32
 PersistentKeepalive = 25
-`, privKey, subnet, listenPort, localPublicKey, subnet)
+`, privKey, subnet, listenPort, iface, iface, iface, iface, localPublicKey, subnet)
 
 	cfgPath := fmt.Sprintf("/etc/wireguard/%s.conf", iface)
 	if err := host.WriteFile(cfgPath, cfg, "600"); err != nil {
