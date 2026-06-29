@@ -12,14 +12,16 @@ import (
 )
 
 type WireGuard struct {
-	mu          sync.RWMutex
-	name        string
-	status      Status
-	metrics     *Metrics
-	remoteAddr  string
-	iface       string
-	privateKey  string
-	configPath  string
+	mu             sync.RWMutex
+	name           string
+	status         Status
+	metrics        *Metrics
+	remoteAddr     string
+	iface          string
+	privateKey     string
+	remotePubKey   string
+	localAddr      string
+	configPath     string
 }
 
 func NewWireGuard() *WireGuard {
@@ -39,6 +41,12 @@ func (w *WireGuard) Init(cfg map[string]string) error {
 	defer w.mu.Unlock()
 	if key, ok := cfg["private_key"]; ok {
 		w.privateKey = key
+	}
+	if pub, ok := cfg["remote_pub"]; ok {
+		w.remotePubKey = pub
+	}
+	if addr, ok := cfg["local_addr"]; ok {
+		w.localAddr = addr
 	}
 	if iface, ok := cfg["interface"]; ok {
 		w.iface = iface
@@ -68,9 +76,10 @@ func (w *WireGuard) Connect(remoteAddr string) error {
 	}
 
 	wgPort := 51820
-	conn, err := net.DialTimeout("udp", fmt.Sprintf("%s:%d", remoteAddr, wgPort), 3*time.Second)
+	endpoint := formatEndpoint(remoteAddr, wgPort)
+	conn, err := net.DialTimeout("udp", endpoint, 3*time.Second)
 	if err != nil {
-		log.Printf("[wireguard] remote WG port unreachable, using ping-only mode")
+		log.Printf("[wireguard] remote WG port unreachable via %s: %v", endpoint, err)
 		w.status = StatusActive
 		return nil
 	}
@@ -165,18 +174,34 @@ func (w *WireGuard) generateConfig(remoteAddr string) string {
 		}
 	}
 
+	pubKey := w.remotePubKey
+	if pubKey == "" {
+		pubKey = remoteAddr + "-pub"
+	}
+	localAddr := w.localAddr
+	if localAddr == "" {
+		localAddr = "10.100.0.2/24"
+	}
+
 	return fmt.Sprintf(`[Interface]
 PrivateKey = %s
-Address = 10.100.0.2/24
+Address = %s
 DNS = 1.1.1.1
 MTU = 1420
 
 [Peer]
-PublicKey = %s-pub
-Endpoint = %s:51820
+PublicKey = %s
+Endpoint = %s
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
-`, privateKey, remoteAddr, remoteAddr)
+`, privateKey, localAddr, pubKey, formatEndpoint(remoteAddr, 51820))
+}
+
+func formatEndpoint(addr string, port int) string {
+	if strings.Contains(addr, ":") {
+		return fmt.Sprintf("[%s]:%d", addr, port)
+	}
+	return fmt.Sprintf("%s:%d", addr, port)
 }
 
 var (

@@ -228,10 +228,18 @@ func (o *Orchestrator) ConnectToRemote(addr string, port int, user, password str
 		remoteIP = addr
 	}
 
-	localWG := transport.NewWireGuard()
+	localWG, ok := o.transportM.Get("wireguard")
+	if !ok {
+		localWG = transport.NewWireGuard()
+		o.transportM.Register(localWG)
+	}
+	wgPort := 51820
+	subnet := wgPort % 256
 	localWG.Init(map[string]string{
 		"private_key": localPriv,
+		"remote_pub":  remotePub,
 		"interface":   "nyxora0",
+		"local_addr":  fmt.Sprintf("10.100.%d.2/24", subnet),
 	})
 	if err := localWG.Connect(remoteIP); err != nil {
 		o.addStep("Setting up local WG endpoint", "FAILED", err.Error())

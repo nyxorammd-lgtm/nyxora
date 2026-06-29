@@ -31,6 +31,7 @@ func SetupWireGuardRemote(host *Host, localPublicKey string, listenPort int) (st
 	pubKey = strings.TrimSpace(pubKey)
 
 	iface := fmt.Sprintf("nyxora%d", listenPort)
+	subnet := listenPort % 256
 	cfg := fmt.Sprintf(`[Interface]
 PrivateKey = %s
 Address = 10.100.%d.1/24
@@ -39,9 +40,9 @@ MTU = 1420
 
 [Peer]
 PublicKey = %s
-AllowedIPs = 10.100.%d.0/24
+AllowedIPs = 10.100.%d.2/32
 PersistentKeepalive = 25
-`, privKey, listenPort%256, listenPort, localPublicKey, listenPort%256)
+`, privKey, subnet, listenPort, localPublicKey, subnet)
 
 	cfgPath := fmt.Sprintf("/etc/wireguard/%s.conf", iface)
 	if err := host.WriteFile(cfgPath, cfg, "600"); err != nil {
