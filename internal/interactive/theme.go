@@ -85,3 +85,4 @@ var themes = map[string]Theme{
 }
 
 var currentTheme = themes["catppuccin-mocha"]
+var currentThemeName = "catppuccin-mocha"
