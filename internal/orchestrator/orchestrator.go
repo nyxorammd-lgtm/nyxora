@@ -79,8 +79,10 @@ func New(cfg *config.Config) *Orchestrator {
 	}
 }
 
+var version = "dev"
+
 func (o *Orchestrator) Init() error {
-	log.Printf("[orchestrator] initializing nyxora v0.1.0")
+	log.Printf("[orchestrator] initializing nyxora v%s", version)
 	log.Printf("[orchestrator] node id: %s", o.localNodeID)
 
 	if err := os.MkdirAll(o.cfg.DataDir, 0755); err != nil {
