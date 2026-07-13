@@ -1,68 +1,50 @@
 package routing
 
 import (
-	"math"
 	"sort"
+
+	"github.com/nyxora/nyxora/internal/transport"
 )
 
 type PathScore struct {
-	Name     string  `json:"name"`
-	Type     string  `json:"type"`
-	Score    float64 `json:"score"`
-	Latency  float64 `json:"latency"`
-	Jitter   float64 `json:"jitter"`
-	Loss     float64 `json:"packet_loss"`
+	Name      string  `json:"name"`
+	Type      string  `json:"type"`
+	Score     float64 `json:"score"`
+	Latency   float64 `json:"latency"`
+	Jitter    float64 `json:"jitter"`
+	Loss      float64 `json:"packet_loss"`
 	Stability float64 `json:"stability"`
 	Bandwidth int     `json:"bandwidth"`
 }
 
 type Scorer struct {
-	weights Weights
+	weights transport.ScoringWeights
 }
 
-type Weights struct {
-	LatencyWeight  float64
-	LossWeight     float64
-	JitterWeight   float64
-	StabilityWeight float64
-	BandwidthWeight float64
-}
-
-var DefaultWeights = Weights{
-	LatencyWeight:   0.30,
-	LossWeight:      0.25,
-	JitterWeight:    0.15,
-	StabilityWeight: 0.20,
-	BandwidthWeight: 0.10,
+var DefaultWeights = transport.ScoringWeights{
+	Latency:   0.30,
+	Loss:      0.25,
+	Jitter:    0.15,
+	Stability: 0.20,
 }
 
 func NewScorer() *Scorer {
 	return &Scorer{weights: DefaultWeights}
 }
 
-func NewScorerWithWeights(w Weights) *Scorer {
+func NewScorerWithWeights(w transport.ScoringWeights) *Scorer {
 	return &Scorer{weights: w}
 }
 
 func (s *Scorer) Score(latency, jitter, loss, stability float64, bandwidth int) float64 {
-	if loss > 50 {
-		return 0
+	m := &transport.Metrics{
+		LatencyMs:  latency,
+		JitterMs:   jitter,
+		PacketLoss: loss,
+		Stability:  stability,
+		Bandwidth:  bandwidth,
 	}
-	if latency <= 0 {
-		return 5
-	}
-
-	latencyScore := math.Max(0, 100-latency/2)
-	lossScore := math.Max(0, 100-loss*2)
-	jitterScore := math.Max(0, 100-jitter*3)
-	stabilityScore := stability * 100
-	bwScore := math.Min(100, float64(bandwidth)/10)
-
-	return latencyScore*s.weights.LatencyWeight +
-		lossScore*s.weights.LossWeight +
-		jitterScore*s.weights.JitterWeight +
-		stabilityScore*s.weights.StabilityWeight +
-		bwScore*s.weights.BandwidthWeight
+	return transport.ComputeScore(m, s.weights)
 }
 
 func (s *Scorer) Rank(scores []PathScore) []PathScore {

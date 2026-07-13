@@ -29,7 +29,7 @@ var ValidModes = []ServerMode{ModeFull, ModeLite, ModeMinimal}
 var ValidTransportNames = map[string]bool{
 	"wireguard": true, "openvpn": true, "ssh": true, "quic": true,
 	"frp": true, "rathole": true, "ipsec": true, "shadowsocks": true,
-	"hysteria": true, "backhaul": true, "tcp": true,
+	"hysteria": true, "backhaul": true, "tcp": true, "websocket": true,
 }
 
 // ModeThresholds defines RAM thresholds for auto-detection (configurable).
@@ -93,7 +93,7 @@ var DefaultConfig = Config{
 }
 
 var LiteTransports = []string{
-	"ssh", "shadowsocks", "quic", "tcp", "frp",
+	"ssh", "shadowsocks", "quic", "tcp", "frp", "websocket",
 }
 
 var MinimalTransports = []string{
@@ -102,7 +102,7 @@ var MinimalTransports = []string{
 
 var AllTransports = []string{
 	"wireguard", "openvpn", "ssh", "quic", "frp", "rathole",
-	"ipsec", "shadowsocks", "hysteria", "backhaul", "tcp",
+	"ipsec", "shadowsocks", "hysteria", "backhaul", "tcp", "websocket",
 }
 
 func GetTransportsForMode(mode ServerMode) []string {

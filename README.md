@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://img.shields.io/badge/go-%3E%3D1.25-00ADD8?style=flat&logo=go" alt="Go Version">
+  <img src="https://img.shields.io/badge/go-%3E%3D1.24-00ADD8?style=flat&logo=go" alt="Go Version">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat" alt="License">
   <img src="https://img.shields.io/badge/status-active-success?style=flat" alt="Status">
   <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat" alt="PRs Welcome">
@@ -8,7 +8,7 @@
   <br>
   <a href="https://github.com/nyxorammd-lgtm/nyxora/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nyxorammd-lgtm/nyxora/ci.yml?branch=main&label=CI&logo=github" alt="CI"></a>
   <a href="https://github.com/nyxorammd-lgtm/nyxora/actions/workflows/codeql.yml"><img src="https://img.shields.io/github/actions/workflow/status/nyxorammd-lgtm/nyxora/codeql.yml?branch=main&label=CodeQL&logo=github" alt="CodeQL"></a>
-  <img src="https://img.shields.io/badge/transports-11-ff69b4?style=flat" alt="11 Transports">
+  <img src="https://img.shields.io/badge/transports-12-ff69b4?style=flat" alt="12 Transports">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey?style=flat" alt="Platform">
   <img src="https://img.shields.io/badge/coverage-80%25-yellowgreen?style=flat" alt="Coverage">
   <img src="https://img.shields.io/github/v/release/nyxorammd-lgtm/nyxora?style=flat" alt="Release">
@@ -57,10 +57,10 @@
 <td width="50%">
 
 **🧠 Self-Healing Orchestration**
-- 11 tunnel transports: WireGuard, OpenVPN, SSH, QUIC, FRP, Rathole, IPsec, Shadowsocks, Hysteria, Backhaul, TCP
+- 12 tunnel transports: WireGuard, OpenVPN, SSH, QUIC, FRP, Rathole, IPsec, Shadowsocks, Hysteria, Backhaul, TCP, WebSocket
 - Automatic failover — detects degraded tunnels, switches instantly
 - 5 multipath scheduling modes (weighted, lowest-latency, lowest-loss, even, all-active)
-- Real-time scoring engine (latency + packet loss + weight)
+- Real-time scoring engine (latency + packet loss + jitter + stability)
 
 </td>
 <td width="50%">
@@ -93,7 +93,17 @@
 - IPsec/strongSwan support
 - Shadowsocks encrypted proxy
 - Hysteria 2 (modified QUIC with anti-censorship)
+- TLS wrapper with self-signed cert generation
 - Automatic secret generation (passwords, PSKs, tokens)
+
+</td>
+<td width="50%">
+
+**📊 Production-Grade Observability**
+- Prometheus metrics endpoint (/metrics)
+- Internal DNS resolver with caching
+- Rate limiting per transport (token bucket)
+- Hot-reload config (file watcher)
 
 </td>
 </tr>
@@ -172,7 +182,7 @@ Options:
 
 | Mode     | Transports               | RAM Required |
 |----------|--------------------------|--------------|
-| `full`   | All 11 tunnels           | 2GB+         |
+| `full`   | All 12 tunnels           | 2GB+         |
 | `lite`   | Lightweight selection    | 512MB–2GB    |
 | `minimal`| SSH + Shadowsocks only   | < 512MB      |
 
@@ -285,7 +295,7 @@ graph TB
 |---------|--------|-----------|---------|-----|
 | **Single binary** | ✅ Yes | ❌ Kernel module | ❌ OpenVPN | ✅ |
 | **Agentless remote** | ✅ SSH only | ❌ | ❌ | ✅ |
-| **Multi-transport** | ✅ 11 transports | ❌ 1 | ❌ 1 | ❌ 1 |
+| **Multi-transport** | ✅ 12 transports | ❌ 1 | ❌ 1 | ❌ 1 |
 | **Auto-failover** | ✅ Continuous scoring | ❌ | ❌ | ❌ |
 | **Interactive TUI** | ✅ Bubble Tea | ❌ | ❌ | ❌ |
 | **Self-healing** | ✅ | ❌ | ❌ | ❌ |
@@ -364,6 +374,7 @@ Config is stored at `/etc/nyxora/config.json` (auto-generated on `nyxora install
 | 9 | **hysteria**  | 8444    | UDP      | Tunnel    | 90         | 12     |
 | 10| **backhaul**  | 3080    | TCP      | Relay     | 82         | 10     |
 | 11| **tcp**       | 9924    | TCP      | Tunnel    | 50         | 3      |
+| 12| **websocket** | 9925    | TCP      | Tunnel    | 70         | 8      |
 
 ### Multipath Scheduling Modes
 
@@ -381,7 +392,7 @@ Config is stored at `/etc/nyxora/config.json` (auto-generated on `nyxora install
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.24+
 - Linux or macOS
 - `ssh`, `sshpass`, `wg`, `curl`, `ping`
 
@@ -412,17 +423,21 @@ nyxora/
 │   ├── nyxora/           # CLI entrypoint
 │   └── quic-server/      # QUIC echo server
 ├── internal/
-│   ├── config/           # Config, secrets, server info
+│   ├── config/           # Config, secrets, server info, hot-reload watcher
 │   ├── dashboard/        # ANSI terminal dashboard
+│   ├── dns/              # DNS resolver with caching
 │   ├── failover/         # Automatic failover engine
 │   ├── interactive/      # Bubble Tea TUI (menu, themes, connect wizard)
+│   ├── metrics/          # Prometheus metrics collector & HTTP server
 │   ├── monitor/          # Ping-based monitoring
 │   ├── multipath/        # Multipath scheduler (5 modes)
 │   ├── orchestrator/     # Core engine: connect, monitor, failover
 │   ├── packager/         # Tar.gz archive utilities
+│   ├── ratelimit/        # Token bucket rate limiter
 │   ├── remote/           # SSH client + provisioning
 │   ├── routing/          # Scorer + routing engine
-│   └── transport/        # 11 transport implementations
+│   ├── tls/              # TLS cert manager & wrapper
+│   └── transport/        # 12 transport implementations
 ├── tunnels/              # Install scripts per tunnel
 ├── Makefile              # Build, test, install, clean
 ├── Dockerfile            # Multi-stage Docker build
@@ -513,7 +528,7 @@ Error: ssh: connect to host 192.168.1.50 port 22: connection refused
 
 **Environment**
 - OS (local): Ubuntu 22.04
-- Go Version: 1.25.0
+- Go Version: 1.24.4
 - NYXORA Version: 0.2.0
 - Remote Server OS: CentOS 8
 - RAM: 512MB

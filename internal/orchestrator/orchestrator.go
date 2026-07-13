@@ -101,6 +101,7 @@ func (o *Orchestrator) Init() error {
 		transport.NewHysteria(),
 		transport.NewBackhaul(),
 		transport.NewTCP(),
+		transport.NewWebSocket(),
 	}
 
 	// Filter transports based on mode

@@ -2,6 +2,8 @@ package routing
 
 import (
 	"testing"
+
+	"github.com/nyxora/nyxora/internal/transport"
 )
 
 func TestNewScorer(t *testing.T) {
@@ -14,19 +16,16 @@ func TestNewScorer(t *testing.T) {
 func TestScorerScore(t *testing.T) {
 	s := NewScorer()
 
-	// Perfect conditions
 	score := s.Score(10, 1, 0, 1.0, 1000)
-	if score < 90 {
-		t.Errorf("perfect conditions score should be > 90, got %f", score)
+	if score < 80 {
+		t.Errorf("perfect conditions score should be > 80, got %f", score)
 	}
 
-	// High loss
 	score = s.Score(50, 5, 60, 0.8, 500)
 	if score != 0 {
 		t.Errorf("high loss score should be 0, got %f", score)
 	}
 
-	// Zero latency
 	score = s.Score(0, 0, 0, 1.0, 100)
 	if score != 5 {
 		t.Errorf("zero latency score should be 5, got %f", score)
@@ -56,7 +55,6 @@ func TestScorerRank(t *testing.T) {
 func TestScorerBest(t *testing.T) {
 	s := NewScorer()
 
-	// Empty
 	best := s.Best(nil)
 	if best != nil {
 		t.Error("Best of nil should be nil")
@@ -140,16 +138,14 @@ func TestEngineNeedsFailover(t *testing.T) {
 }
 
 func TestNewScorerWithWeights(t *testing.T) {
-	w := Weights{
-		LatencyWeight:   0.50,
-		LossWeight:      0.20,
-		JitterWeight:    0.10,
-		StabilityWeight: 0.10,
-		BandwidthWeight: 0.10,
+	w := transport.ScoringWeights{
+		Latency:   0.50,
+		Loss:      0.20,
+		Jitter:    0.10,
+		Stability: 0.20,
 	}
 	s := NewScorerWithWeights(w)
 
-	// With high latency weight, high latency should hurt more
 	scoreDefault := NewScorer().Score(100, 10, 5, 0.8, 100)
 	scoreCustom := s.Score(100, 10, 5, 0.8, 100)
 

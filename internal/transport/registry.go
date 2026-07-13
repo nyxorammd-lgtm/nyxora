@@ -148,6 +148,18 @@ var TunnelRegistry = []TunnelMeta{
 		Score:       50,
 		Weight:      3,
 	},
+	{
+		Name:        "websocket",
+		Type:        "websocket",
+		Category:    CatTunnel,
+		Description: "WebSocket transport, bypasses CDN and proxies",
+		Port:        9925,
+		Protocol:    "tcp",
+		Binary:      "",
+		Deps:        []string{},
+		Score:       70,
+		Weight:      8,
+	},
 }
 
 func LookupTunnel(name string) (*TunnelMeta, error) {

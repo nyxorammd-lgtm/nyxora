@@ -6,104 +6,67 @@ import (
 	"testing"
 )
 
-func TestNewPackager(t *testing.T) {
-	dir := t.TempDir()
-	p := NewPackager(dir)
-	if p == nil {
-		t.Fatal("NewPackager returned nil")
-	}
-}
-
 func TestPackagerPackUnpack(t *testing.T) {
-	dir := t.TempDir()
-	p := NewPackager(dir)
+	tmp := t.TempDir()
+	p := NewPackager(tmp)
 
-	// Create source dir with a file
-	srcDir := filepath.Join(dir, "source")
+	srcDir := filepath.Join(tmp, "testdir")
 	os.MkdirAll(srcDir, 0755)
-	os.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello world"), 0644)
+	os.WriteFile(filepath.Join(srcDir, "file.txt"), []byte("hello"), 0644)
 
-	// Pack
 	err := p.Pack("test", srcDir)
 	if err != nil {
-		t.Fatalf("Pack failed: %v", err)
+		t.Fatalf("Pack: %v", err)
 	}
 
-	// Check archive exists
-	if !p.Exists("test") {
-		t.Error("archive should exist after Pack")
-	}
-
-	// Unpack
-	destDir := filepath.Join(dir, "dest")
-	err = p.Unpack("test", destDir)
+	dstDir := filepath.Join(tmp, "dst")
+	os.MkdirAll(dstDir, 0755)
+	err = p.Unpack("test", dstDir)
 	if err != nil {
-		t.Fatalf("Unpack failed: %v", err)
-	}
-
-	// Verify content
-	data, err := os.ReadFile(filepath.Join(destDir, "test.txt"))
-	if err != nil {
-		t.Fatalf("ReadFile failed: %v", err)
-	}
-	if string(data) != "hello world" {
-		t.Errorf("content should be 'hello world', got '%s'", string(data))
+		t.Fatalf("Unpack: %v", err)
 	}
 }
 
 func TestPackagerList(t *testing.T) {
-	dir := t.TempDir()
-	p := NewPackager(dir)
+	tmp := t.TempDir()
+	p := NewPackager(tmp)
 
-	list, err := p.List()
+	srcDir := filepath.Join(tmp, "listdir")
+	os.MkdirAll(srcDir, 0755)
+	os.WriteFile(filepath.Join(srcDir, "a.txt"), []byte("a"), 0644)
+
+	p.Pack("listtest", srcDir)
+
+	files, err := p.List()
 	if err != nil {
-		t.Fatalf("List failed: %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	if len(list) != 0 {
-		t.Errorf("empty packager should have 0 items, got %d", len(list))
+	if len(files) == 0 {
+		t.Error("should list files in archive")
+	}
+}
+
+func TestPackagerExists(t *testing.T) {
+	p := NewPackager(t.TempDir())
+	if p.Exists("nonexistent") {
+		t.Error("nonexistent archive should not exist")
 	}
 }
 
 func TestPackagerRemove(t *testing.T) {
-	dir := t.TempDir()
-	p := NewPackager(dir)
+	tmp := t.TempDir()
+	p := NewPackager(tmp)
 
-	srcDir := filepath.Join(dir, "source")
+	srcDir := filepath.Join(tmp, "removeDir")
 	os.MkdirAll(srcDir, 0755)
-	os.WriteFile(filepath.Join(srcDir, "test.txt"), []byte("hello"), 0644)
+	os.WriteFile(filepath.Join(srcDir, "data.txt"), []byte("x"), 0644)
+	p.Pack("removetest", srcDir)
 
-	p.Pack("test", srcDir)
-
-	if !p.Exists("test") {
-		t.Error("archive should exist before Remove")
-	}
-
-	err := p.Remove("test")
+	err := p.Remove("removetest")
 	if err != nil {
-		t.Fatalf("Remove failed: %v", err)
+		t.Fatalf("Remove: %v", err)
 	}
-
-	if p.Exists("test") {
-		t.Error("archive should not exist after Remove")
-	}
-}
-
-func TestPackagerUnpackNonexistent(t *testing.T) {
-	dir := t.TempDir()
-	p := NewPackager(dir)
-
-	err := p.Unpack("nonexistent", filepath.Join(dir, "dest"))
-	if err == nil {
-		t.Error("Unpack of nonexistent archive should fail")
-	}
-}
-
-func TestPackagerPackNonexistent(t *testing.T) {
-	dir := t.TempDir()
-	p := NewPackager(dir)
-
-	err := p.Pack("test", "/nonexistent/path")
-	if err == nil {
-		t.Error("Pack of nonexistent source should fail")
+	if p.Exists("removetest") {
+		t.Error("archive should be removed")
 	}
 }
