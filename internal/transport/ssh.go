@@ -48,7 +48,14 @@ func (s *SSH) Connect(remoteAddr string) error {
 		return err
 	}
 
-	usePassword := s.password != "" && CommandExists("sshpass")
+	s.mu.Lock()
+	password := s.password
+	user := s.user
+	localPort := s.localPort
+	port := s.port
+	s.mu.Unlock()
+
+	usePassword := password != "" && CommandExists("sshpass")
 
 	if usePassword {
 		tunnelCmd := exec.Command("sshpass",
@@ -60,15 +67,15 @@ func (s *SSH) Connect(remoteAddr string) error {
 			"-o", "ServerAliveCountMax=3",
 			"-o", "ExitOnForwardFailure=yes",
 			"-N",
-			"-D", fmt.Sprintf("127.0.0.1:%d", s.localPort),
-			"-p", fmt.Sprintf("%d", s.port),
-			fmt.Sprintf("%s@%s", s.user, remoteAddr),
+			"-D", fmt.Sprintf("127.0.0.1:%d", localPort),
+			"-p", fmt.Sprintf("%d", port),
+			fmt.Sprintf("%s@%s", user, remoteAddr),
 		)
-		tunnelCmd.Env = append(os.Environ(), "SSHPASS="+s.password)
+		tunnelCmd.Env = append(os.Environ(), "SSHPASS="+password)
 
 		s.SetCmd(tunnelCmd)
 		s.Logf("starting password tunnel %s@%s:%d -> 127.0.0.1:%d",
-			s.user, remoteAddr, s.port, s.localPort)
+			user, remoteAddr, port, localPort)
 
 		if err := tunnelCmd.Start(); err != nil {
 			select {

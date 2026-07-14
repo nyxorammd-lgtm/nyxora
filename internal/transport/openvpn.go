@@ -43,6 +43,10 @@ func (o *OpenVPN) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	o.mu.Lock()
+	port := o.port
+	o.mu.Unlock()
+
 	config := fmt.Sprintf(`client
 dev tun
 proto udp
@@ -55,7 +59,7 @@ remote-cert-tls server
 auth SHA256
 cipher AES-256-CBC
 verb 3
-`, remoteAddr, o.port)
+`, remoteAddr, port)
 
 	tmpPath := fmt.Sprintf("/tmp/nyxora-openvpn-%d.conf", time.Now().UnixNano())
 	if err := WriteConfig(tmpPath, config); err != nil {

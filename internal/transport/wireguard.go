@@ -59,6 +59,10 @@ func (w *WireGuard) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	w.mu.Lock()
+	iface := w.iface
+	w.mu.Unlock()
+
 	endpoint := FormatEndpoint(remoteAddr, 51820)
 	conn, err := net.DialTimeout("udp", endpoint, 3*time.Second)
 	if err != nil {
@@ -69,7 +73,7 @@ func (w *WireGuard) Connect(remoteAddr string) error {
 	conn.Close()
 
 	cfg := w.generateConfig(remoteAddr)
-	cfgPath := fmt.Sprintf("/etc/wireguard/%s.conf", w.iface)
+	cfgPath := fmt.Sprintf("/etc/wireguard/%s.conf", iface)
 	if err := WriteConfig(cfgPath, cfg); err != nil {
 		w.Logf("config write error: %v (continuing with ping-only)", err)
 		w.SetStatusActive()
@@ -77,22 +81,25 @@ func (w *WireGuard) Connect(remoteAddr string) error {
 	}
 
 	if CommandExists("wg-quick") {
-		exec.Command("wg-quick", "down", w.iface).Run()
-		if out, err := exec.Command("wg-quick", "up", w.iface).CombinedOutput(); err != nil {
+		exec.Command("wg-quick", "down", iface).Run()
+		if out, err := exec.Command("wg-quick", "up", iface).CombinedOutput(); err != nil {
 			w.Logf("wg-quick up failed: %v\n%s", err, string(out))
 		} else {
-			w.Logf("wg-quick up %s success", w.iface)
+			w.Logf("wg-quick up %s success", iface)
 		}
 	}
 
 	w.SetStatusActive()
-	w.Logf("connected to %s via %s", remoteAddr, w.iface)
+	w.Logf("connected to %s via %s", remoteAddr, iface)
 	return nil
 }
 
 func (w *WireGuard) Disconnect() error {
+	w.mu.Lock()
+	iface := w.iface
+	w.mu.Unlock()
 	if CommandExists("wg-quick") {
-		exec.Command("wg-quick", "down", w.iface).Run()
+		exec.Command("wg-quick", "down", iface).Run()
 	}
 	return w.BaseDisconnect()
 }
@@ -103,7 +110,12 @@ func (w *WireGuard) Health() bool    { return w.BaseHealth() }
 func (w *WireGuard) Score() float64  { return w.BaseScore() }
 
 func (w *WireGuard) generateConfig(remoteAddr string) string {
+	w.mu.Lock()
 	privateKey := w.privateKey
+	remotePub := w.remotePubKey
+	localAddr := w.localAddr
+	w.mu.Unlock()
+
 	if privateKey == "" {
 		out, _ := exec.Command("wg", "genkey").Output()
 		if len(out) > 0 {
@@ -112,11 +124,10 @@ func (w *WireGuard) generateConfig(remoteAddr string) string {
 			privateKey = "nyxora-wg-auto-" + fmt.Sprintf("%d", time.Now().UnixNano())
 		}
 	}
-	pubKey := w.remotePubKey
+	pubKey := remotePub
 	if pubKey == "" {
 		pubKey = remoteAddr + "-pub"
 	}
-	localAddr := w.localAddr
 	if localAddr == "" {
 		localAddr = "10.100.0.2/24"
 	}

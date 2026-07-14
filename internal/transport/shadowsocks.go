@@ -50,6 +50,12 @@ func (s *ShadowSOCKS) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	s.mu.Lock()
+	password := s.password
+	method := s.method
+	port := s.port
+	s.mu.Unlock()
+
 	config := fmt.Sprintf(`{
     "server": "%s",
     "server_port": %d,
@@ -57,7 +63,7 @@ func (s *ShadowSOCKS) Connect(remoteAddr string) error {
     "password": "%s",
     "method": "%s",
     "timeout": 60
-}`, remoteAddr, s.port, s.password, s.method)
+}`, remoteAddr, port, password, method)
 
 	tmpPath := fmt.Sprintf("/tmp/nyxora-ss-%s.json", remoteAddr)
 	if err := WriteConfig(tmpPath, config); err != nil {

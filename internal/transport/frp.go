@@ -42,6 +42,10 @@ func (f *FRP) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	f.mu.Lock()
+	port := f.port
+	f.mu.Unlock()
+
 	cfg := fmt.Sprintf(`[common]
 server_addr = %s
 server_port = %d
@@ -51,7 +55,7 @@ type = tcp
 local_ip = 127.0.0.1
 local_port = 22
 remote_port = 6000
-`, remoteAddr, f.port)
+`, remoteAddr, port)
 
 	tmpPath := fmt.Sprintf("/tmp/nyxora-frpc-%s.ini", remoteAddr)
 	if err := WriteConfig(tmpPath, cfg); err != nil {
@@ -79,7 +83,7 @@ remote_port = 6000
 		cmd.Wait()
 	})
 
-	f.Logf("connecting to %s:%d", remoteAddr, f.port)
+	f.Logf("connecting to %s:%d", remoteAddr, port)
 	f.SetStatusActive()
 	return nil
 }

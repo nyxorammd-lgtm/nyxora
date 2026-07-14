@@ -48,14 +48,18 @@ func (w *WebSocket) Connect(remoteAddr string) error {
 		w.SetStatusFailed()
 		return fmt.Errorf("websocket listen: %w", err)
 	}
-	w.listener = ln
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", w.handleUpgrade)
-	w.server = &http.Server{Handler: mux}
+	srv := &http.Server{Handler: mux}
+
+	w.mu.Lock()
+	w.listener = ln
+	w.server = srv
+	w.mu.Unlock()
 
 	go func() {
-		if err := w.server.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			w.Logf("server error: %v", err)
 		}
 	}()
@@ -65,7 +69,7 @@ func (w *WebSocket) Connect(remoteAddr string) error {
 
 	go func() {
 		<-ctx.Done()
-		w.server.Close()
+		srv.Close()
 	}()
 
 	return nil
@@ -165,19 +169,21 @@ func (w *WebSocket) Disconnect() error {
 	w.mu.Lock()
 	conns := w.connections
 	w.connections = nil
+	srv := w.server
+	ln := w.listener
+	w.server = nil
+	w.listener = nil
 	w.mu.Unlock()
 
 	for _, conn := range conns {
 		conn.Close(websocket.StatusNormalClosure, "disconnect")
 	}
 
-	if w.server != nil {
-		w.server.Close()
-		w.server = nil
+	if srv != nil {
+		srv.Close()
 	}
-	if w.listener != nil {
-		w.listener.Close()
-		w.listener = nil
+	if ln != nil {
+		ln.Close()
 	}
 	w.BaseDisconnect()
 	w.Logf("disconnected WebSocket")

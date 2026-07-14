@@ -46,7 +46,11 @@ func (h *Hysteria) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	h.mu.Lock()
 	auth := h.authPass
+	port := h.port
+	h.mu.Unlock()
+
 	if auth == "" {
 		auth = "nyxora-hy2-fallback"
 	}
@@ -60,7 +64,7 @@ bandwidth:
   down: "500 mbps"
 socks5:
   listen: "127.0.0.1:1082"
-`, remoteAddr, h.port, auth)
+`, remoteAddr, port, auth)
 
 	tmpPath := fmt.Sprintf("/tmp/nyxora-hy2-%s.yaml", remoteAddr)
 	if err := WriteConfig(tmpPath, config); err != nil {

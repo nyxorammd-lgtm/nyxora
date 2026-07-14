@@ -40,13 +40,39 @@ func NewBase(name, transport string, port int, weights ScoringWeights, bandwidth
 	}
 }
 
-func (b *BaseTransport) BaseName() string         { return b.name }
-func (b *BaseTransport) BaseType() string         { return b.transport }
-func (b *BaseTransport) BasePort() int            { return b.port }
-func (b *BaseTransport) BaseRemoteAddr() string   { return b.remoteAddr }
-func (b *BaseTransport) Context() context.Context { return b.ctx }
+func (b *BaseTransport) BaseName() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.name
+}
+
+func (b *BaseTransport) BaseType() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.transport
+}
+
+func (b *BaseTransport) BasePort() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.port
+}
+
+func (b *BaseTransport) BaseRemoteAddr() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.remoteAddr
+}
+
+func (b *BaseTransport) Context() context.Context {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.ctx
+}
 
 func (b *BaseTransport) SetScoringFn(fn func() float64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.scoringFn = fn
 }
 
@@ -194,9 +220,12 @@ func (b *BaseTransport) Logf(format string, args ...interface{}) {
 }
 
 func (b *BaseTransport) RunInBackground(fn func()) {
+	b.mu.RLock()
+	ctx := b.ctx
+	b.mu.RUnlock()
 	go func() {
 		select {
-		case <-b.ctx.Done():
+		case <-ctx.Done():
 			return
 		default:
 		}

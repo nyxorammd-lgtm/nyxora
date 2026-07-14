@@ -97,6 +97,7 @@ func (t *TCP) Disconnect() error {
 	ln := t.listener
 	t.connections = nil
 	t.listener = nil
+	t.status = StatusInactive
 	t.mu.Unlock()
 	cancel()
 	for _, conn := range conns {
@@ -105,7 +106,6 @@ func (t *TCP) Disconnect() error {
 	if ln != nil {
 		ln.Close()
 	}
-	t.status = StatusInactive
 	t.Logf("disconnected")
 	return nil
 }

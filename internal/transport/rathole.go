@@ -46,7 +46,11 @@ func (r *Rathole) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	r.mu.Lock()
 	token := r.token
+	port := r.port
+	r.mu.Unlock()
+
 	if token == "" {
 		token = "nyxora-rathole-fallback"
 	}
@@ -58,7 +62,7 @@ remote_addr = "%s:%d"
 type = "tcp"
 local_addr = "127.0.0.1:22"
 token = "%s"
-`, remoteAddr, r.port, token)
+`, remoteAddr, port, token)
 
 	tmpPath := fmt.Sprintf("/tmp/nyxora-rathole-%s.toml", remoteAddr)
 	if err := WriteConfig(tmpPath, cfg); err != nil {

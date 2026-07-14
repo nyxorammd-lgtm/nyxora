@@ -53,12 +53,17 @@ func (i *IPsec) Connect(remoteAddr string) error {
 		return nil
 	}
 
-	connectTo := i.targetIP
+	i.mu.Lock()
+	targetIP := i.targetIP
+	psk := i.psk
+	localIP := i.localIP
+	i.mu.Unlock()
+
+	connectTo := targetIP
 	if connectTo == "" {
 		connectTo = remoteAddr
 	}
 
-	psk := i.psk
 	if psk == "" {
 		psk = "nyxora-ipsec-fallback"
 	}
@@ -66,7 +71,7 @@ func (i *IPsec) Connect(remoteAddr string) error {
 	secret := fmt.Sprintf("%s : PSK \"%s\"\n", connectTo, psk)
 	WriteSecret("/etc/ipsec.secrets", secret)
 
-	leftIP := i.localIP
+	leftIP := localIP
 	if leftIP == "" {
 		leftIP = "%any"
 	}

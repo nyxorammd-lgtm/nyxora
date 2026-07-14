@@ -51,7 +51,12 @@ func (b *Backhaul) Connect(remoteAddr string) error {
 		return nil
 	}
 
+	b.mu.Lock()
 	token := b.token
+	port := b.port
+	tr := b.transport
+	b.mu.Unlock()
+
 	if token == "" {
 		token = "nyxora-bh-fallback"
 	}
@@ -66,7 +71,7 @@ dial_timeout = 10
 nodelay = true
 retry_interval = 3
 log_level = "error"
-`, remoteAddr, b.port, b.transport, token)
+`, remoteAddr, port, tr, token)
 
 	clientCfgPath := "/etc/nyxora/backhaul-client.toml"
 	if err := WriteConfig(clientCfgPath, clientCfg); err != nil {
