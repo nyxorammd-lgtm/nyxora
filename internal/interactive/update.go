@@ -78,6 +78,10 @@ func checkForUpdate() tea.Cmd {
 		}
 		defer resp.Body.Close()
 
+		if resp.StatusCode != http.StatusOK {
+			return updateErrMsg{err: fmt.Sprintf("GitHub API returned status %d", resp.StatusCode)}
+		}
+
 		var release githubRelease
 		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 			return updateErrMsg{err: err.Error()}
@@ -196,6 +200,10 @@ func downloadUpdate(url string) tea.Cmd {
 		}
 		defer resp.Body.Close()
 
+		if resp.StatusCode != http.StatusOK {
+			return updateDownloadErrMsg{err: fmt.Sprintf("download failed with status %d", resp.StatusCode)}
+		}
+
 		tmpFile, err := os.CreateTemp("", "nyxora-update-*")
 		if err != nil {
 			return updateDownloadErrMsg{err: err.Error()}
@@ -207,7 +215,6 @@ func downloadUpdate(url string) tea.Cmd {
 		}
 
 		tmpFile.Chmod(0755)
-		tmpFile.Close()
 
 		execPath, err := os.Executable()
 		if err != nil {

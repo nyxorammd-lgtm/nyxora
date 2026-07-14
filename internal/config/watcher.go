@@ -34,8 +34,10 @@ func (w *Watcher) Start() error {
 	if err != nil {
 		return err
 	}
+	w.mu.Lock()
 	w.lastMod = info.ModTime()
 	w.running = true
+	w.mu.Unlock()
 
 	go func() {
 		ticker := time.NewTicker(w.interval)
@@ -59,17 +61,22 @@ func (w *Watcher) check() {
 	if err != nil {
 		return
 	}
-	if info.ModTime().After(w.lastMod) {
+	w.mu.RLock()
+	lastMod := w.lastMod
+	w.mu.RUnlock()
+	if info.ModTime().After(lastMod) {
+		w.mu.Lock()
 		w.lastMod = info.ModTime()
+		w.mu.Unlock()
 		cfg, err := Load(w.path)
 		if err != nil {
 			log.Printf("[config-watcher] reload error: %v", err)
 			return
 		}
 		log.Printf("[config-watcher] config changed, reloading")
-		w.mu.Lock()
+		w.mu.RLock()
 		fn := w.onChange
-		w.mu.Unlock()
+		w.mu.RUnlock()
 		if fn != nil {
 			fn(cfg)
 		}
@@ -77,6 +84,8 @@ func (w *Watcher) check() {
 }
 
 func (w *Watcher) Stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.running {
 		close(w.stopCh)
 		w.running = false

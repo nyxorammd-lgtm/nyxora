@@ -16,6 +16,7 @@ type QUIC struct {
 	BaseTransport
 	connections []*quic.Conn
 	mu          sync.Mutex
+	tlsVerify   bool
 }
 
 func NewQUIC() *QUIC {
@@ -33,7 +34,10 @@ func (q *QUIC) Init(cfg map[string]string) error {
 	if p, ok := cfg["port"]; ok {
 		fmt.Sscanf(p, "%d", &q.port)
 	}
-	log.Printf("[quic] initialized (port: %d)", q.port)
+	if v, ok := cfg["tls_verify"]; ok {
+		q.tlsVerify = v == "true" || v == "1"
+	}
+	log.Printf("[quic] initialized (port: %d, tls_verify: %v)", q.port, q.tlsVerify)
 	return nil
 }
 
@@ -44,8 +48,12 @@ func (q *QUIC) Connect(remoteAddr string) error {
 		return err
 	}
 
+	q.mu.Lock()
+	tlsVerify := q.tlsVerify
+	q.mu.Unlock()
+
 	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: !tlsVerify,
 		NextProtos:         []string{"nyxora-quic"},
 	}
 
@@ -101,14 +109,16 @@ func (q *QUIC) handleStream(stream *quic.Stream) {
 }
 
 func (q *QUIC) Disconnect() error {
-	q.cancel()
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	for _, conn := range q.connections {
-		conn.CloseWithError(0, "disconnect")
-	}
+	cancel := q.cancel
+	conns := q.connections
 	q.connections = nil
 	q.status = StatusInactive
+	q.mu.Unlock()
+	cancel()
+	for _, conn := range conns {
+		conn.CloseWithError(0, "disconnect")
+	}
 	q.Logf("disconnected")
 	return nil
 }

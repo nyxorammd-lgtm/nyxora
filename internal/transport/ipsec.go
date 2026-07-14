@@ -64,7 +64,7 @@ func (i *IPsec) Connect(remoteAddr string) error {
 	}
 
 	secret := fmt.Sprintf("%s : PSK \"%s\"\n", connectTo, psk)
-	WriteConfig("/etc/ipsec.secrets", secret)
+	WriteSecret("/etc/ipsec.secrets", secret)
 
 	leftIP := i.localIP
 	if leftIP == "" {

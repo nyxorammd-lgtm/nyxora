@@ -3,6 +3,7 @@ package transport
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 )
 
@@ -51,7 +52,7 @@ func (s *SSH) Connect(remoteAddr string) error {
 
 	if usePassword {
 		tunnelCmd := exec.Command("sshpass",
-			"-p", s.password,
+			"-e",
 			"ssh",
 			"-o", "StrictHostKeyChecking=no",
 			"-o", "UserKnownHostsFile=/dev/null",
@@ -63,6 +64,7 @@ func (s *SSH) Connect(remoteAddr string) error {
 			"-p", fmt.Sprintf("%d", s.port),
 			fmt.Sprintf("%s@%s", s.user, remoteAddr),
 		)
+		tunnelCmd.Env = append(os.Environ(), "SSHPASS="+s.password)
 
 		s.SetCmd(tunnelCmd)
 		s.Logf("starting password tunnel %s@%s:%d -> 127.0.0.1:%d",

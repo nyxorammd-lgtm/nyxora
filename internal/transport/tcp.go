@@ -91,16 +91,19 @@ func (t *TCP) proxy(ctx context.Context, remoteConn net.Conn) {
 }
 
 func (t *TCP) Disconnect() error {
-	t.cancel()
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	for _, conn := range t.connections {
+	cancel := t.cancel
+	conns := t.connections
+	ln := t.listener
+	t.connections = nil
+	t.listener = nil
+	t.mu.Unlock()
+	cancel()
+	for _, conn := range conns {
 		conn.Close()
 	}
-	t.connections = nil
-	if t.listener != nil {
-		t.listener.Close()
-		t.listener = nil
+	if ln != nil {
+		ln.Close()
 	}
 	t.status = StatusInactive
 	t.Logf("disconnected")

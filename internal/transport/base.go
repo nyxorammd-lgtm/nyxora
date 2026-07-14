@@ -51,6 +51,8 @@ func (b *BaseTransport) SetScoringFn(fn func() float64) {
 }
 
 func (b *BaseTransport) CancelContext() context.Context {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.cancel()
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 	return b.ctx
@@ -122,7 +124,10 @@ func (b *BaseTransport) BaseConnectInit(remoteAddr string) error {
 }
 
 func (b *BaseTransport) KillExisting() {
-	b.cancel()
+	b.mu.RLock()
+	cancel := b.cancel
+	b.mu.RUnlock()
+	cancel()
 }
 
 func (b *BaseTransport) KillOldProcess() {
@@ -135,14 +140,20 @@ func (b *BaseTransport) KillOldProcess() {
 }
 
 func (b *BaseTransport) CleanTmpFiles() {
-	for _, f := range b.tmpFiles {
+	b.mu.Lock()
+	files := b.tmpFiles
+	b.tmpFiles = nil
+	b.mu.Unlock()
+	for _, f := range files {
 		exec.Command("rm", "-f", f).Run()
 	}
-	b.tmpFiles = nil
 }
 
 func (b *BaseTransport) BaseDisconnect() error {
-	b.cancel()
+	b.mu.Lock()
+	cancel := b.cancel
+	b.mu.Unlock()
+	cancel()
 	b.KillOldProcess()
 	b.CleanTmpFiles()
 	b.mu.Lock()
@@ -173,6 +184,8 @@ func (b *BaseTransport) SetCmd(cmd *exec.Cmd) {
 }
 
 func (b *BaseTransport) AddTmpFile(path string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.tmpFiles = append(b.tmpFiles, path)
 }
 
@@ -194,9 +207,10 @@ func (b *BaseTransport) RunInBackground(fn func()) {
 func (b *BaseTransport) KillOnCancel() {
 	b.mu.RLock()
 	cmd := b.cmd
+	ctx := b.ctx
 	b.mu.RUnlock()
 	go func() {
-		<-b.ctx.Done()
+		<-ctx.Done()
 		if cmd != nil && cmd.Process != nil {
 			cmd.Process.Kill()
 		}

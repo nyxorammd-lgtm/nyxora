@@ -66,6 +66,14 @@ func MeasureLatency(addr string, count int) (latency, packetLoss, jitter float64
 }
 
 func WriteConfig(path, content string) error {
+	return writeConfigWithPerm(path, content, 0644)
+}
+
+func WriteSecret(path, content string) error {
+	return writeConfigWithPerm(path, content, 0600)
+}
+
+func writeConfigWithPerm(path, content string, perm os.FileMode) error {
 	dir := path[:len(path)-len(path[len(path)-1:])]
 	for i := len(path) - 1; i >= 0; i-- {
 		if path[i] == '/' {
@@ -76,7 +84,7 @@ func WriteConfig(path, content string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
-	return os.WriteFile(path, []byte(content), 0644)
+	return os.WriteFile(path, []byte(content), perm)
 }
 
 func FormatEndpoint(addr string, port int) string {
