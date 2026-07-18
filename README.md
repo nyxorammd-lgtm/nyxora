@@ -8,7 +8,7 @@
   <br>
   <a href="https://github.com/nyxorammd-lgtm/nyxora/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nyxorammd-lgtm/nyxora/ci.yml?branch=main&label=CI&logo=github" alt="CI"></a>
   <a href="https://github.com/nyxorammd-lgtm/nyxora/actions/workflows/codeql.yml"><img src="https://img.shields.io/github/actions/workflow/status/nyxorammd-lgtm/nyxora/codeql.yml?branch=main&label=CodeQL&logo=github" alt="CodeQL"></a>
-  <img src="https://img.shields.io/badge/transports-12-ff69b4?style=flat" alt="12 Transports">
+  <img src="https://img.shields.io/badge/transports-14-ff69b4?style=flat" alt="14 Transports">
   <img src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey?style=flat" alt="Platform">
   <img src="https://img.shields.io/badge/coverage-runnable-brightgreen?style=flat" alt="Coverage">
   <img src="https://img.shields.io/github/v/release/nyxorammd-lgtm/nyxora?style=flat" alt="Release">
@@ -318,6 +318,50 @@ nyxora connect 91.107.243.237 --user root --password ...
   9.  ALL-ACTIVE    → Test & activate all tunnels simultaneously
   10. MONITOR       → Every 10s: ping, score, failover check
 ```
+
+---
+
+## 📸 Web Dashboard Screenshots
+
+NYXORA includes a **web dashboard** for tunnel management. Access it at `http://YOUR_SERVER:8080/tunnel.html`
+
+### Tunnel Map
+![Tunnel Map](screenshots/01-tunnel-map.png)
+*Visual map showing connections between servers with animated tunnel lines*
+
+### New Connection
+![Connect](screenshots/02-connect.png)
+*Form to create tunnel connections with SSH authentication and transport selection*
+
+### Active Tunnels
+![Tunnels](screenshots/03-tunnels.png)
+*List of active tunnel connections with status, latency, and controls*
+
+### Auto Detect Best Transport
+![Auto Detect](screenshots/04-auto-detect.png)
+*Automatic ping testing of all 14 transports to find the best one*
+
+### Xray Config Builder
+![Xray Config](screenshots/05-xray-config.png)
+*Generate Xray configurations for VLESS, VMess, Trojan, Shadowsocks*
+
+### Install Panels
+![Panels](screenshots/06-panels.png)
+*One-click installation of Marzban, 3X-UI, Xray Core*
+
+### Performance Charts
+![Charts](screenshots/07-charts.png)
+*Real-time latency, bandwidth, packet loss, and score charts*
+
+### Security & Audit
+![Security](screenshots/08-security.png)
+*SSL status, server fingerprints, failed logins, QoS, uptime counter*
+
+### Terminal
+![Terminal](screenshots/09-terminal.png)
+*Full terminal interface with NYXORA commands*
+
+**[Full Web Dashboard Documentation →](web/README.md)**
 
 ---
 
