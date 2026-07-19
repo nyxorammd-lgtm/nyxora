@@ -17,14 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **30-second connection timeout** — Prevents infinite hangs on unresponsive transports
 - **Comprehensive unit tests** — 15+ new tests for transport manager with mock transports
 - **CI/CD pipeline improvements** — Updated to Go 1.25, added test timeout, race detection
+- **Web Dashboard branding** — Updated all HTML files with NYXORA Network branding
+- **Organization migration** — Repository moved to `nyxora-network` GitHub Organization
 
 ### Changed
 - **Module path fixed** — `go.mod` now correctly declares `github.com/nyxora-network/nyxora`
 - **CLI architecture** — Replaced manual `os.Args` parsing with `spf13/cobra` v1.10.2
 - **Error handling** — All critical paths now use `fmt.Errorf` wrapping with context
 - **Go version** — Minimum required Go version updated from 1.24 to 1.25
-- **README.md** — Updated with new CLI commands, architecture highlights, and badges
+- **README.md** — Unified professional README with badges, CLI/Web docs, and architecture highlights
 - **CI/CD workflows** — Updated `ci.yml` and `release.yml` to Go 1.25
+- **All internal URLs** — Updated from `nyxorammd-lgtm` to `nyxora-network` (40+ files)
 
 ### Fixed
 - **Import path mismatch** — All internal imports now use correct module path

@@ -28,12 +28,12 @@
 
 <br>
 
-<h1>NYXORA</h1>
-  <h3>Stop Testing Tunnels One by One — Use NYXORA</h3>
+<h1>NYXORA Network</h1>
+  <h3>🚀 Production-grade, self-healing multi-transport VPN & tunnel orchestrator</h3>
   <p>
-    <b>Self-healing multi-transport VPN/tunnel manager</b><br>
+    <b>Zero-config remote provisioning, real-time concurrent failover, and a stunning Web Dashboard.</b><br>
     Install on <i>one</i> server. Connect to <i>any</i> remote server via SSH.<br>
-    Zero agent required. Auto-provisions. Auto-failover. Interactive TUI.
+    Zero agent required. Auto-provisions. Auto-failover. Interactive TUI + Web UI.
   </p>
   <br>
   <p>
@@ -58,6 +58,7 @@
 
 **🧠 Self-Healing Orchestration**
 - 12 tunnel transports: WireGuard, OpenVPN, SSH, QUIC, FRP, Rathole, IPsec, Shadowsocks, Hysteria, Backhaul, TCP, WebSocket
+- **Concurrent failover** — all transports connect simultaneously via `errgroup`
 - Automatic failover — detects degraded tunnels, switches instantly
 - 5 multipath scheduling modes (weighted, lowest-latency, lowest-loss, even, all-active)
 - Real-time scoring engine (latency + packet loss + jitter + stability)
@@ -86,6 +87,19 @@
 - Step-by-step connect wizard
 
 </td>
+<td width="50%">
+
+**🌐 Web Dashboard**
+- Beautiful glassmorphism admin panel
+- 7 language support (EN, FA, RU, ZH, AR, HI, ES) with RTL
+- Real-time transport monitoring
+- Xray Config Builder
+- User management
+- Latency heatmap
+
+</td>
+</tr>
+<tr>
 <td width="50%">
 
 **🔐 Enterprise-Grade Security**
@@ -163,6 +177,17 @@ nyxora tui
 # 4. Live monitoring dashboard
 nyxora dashboard
 ```
+
+### Web Dashboard
+
+Access the beautiful web UI at `http://YOUR_SERVER_IP:8080/tunnel.html`
+
+Features:
+- 🌐 7 languages with RTL support (FA, AR)
+- 📊 Real-time transport monitoring
+- 🔧 Xray Config Builder
+- 👥 User management
+- 🗺️ Latency heatmap
 
 ### Connect Options
 
@@ -259,11 +284,17 @@ NYXORA features a full-featured terminal UI built with [Bubble Tea](https://gith
 ## 🏗️ Architecture Highlights
 
 ### Concurrent Failover Engine
-NYXORA connects to **all 12 transports simultaneously** using Go's `errgroup` — not sequentially. This means:
+NYXORA connects to **all 12 transports simultaneously** using Go's `golang.org/x/sync/errgroup` — not sequentially. This means:
 - **Connection time**: ~2s (max single transport) instead of ~24s (sum of all)
 - **Automatic failover**: Detects degraded tunnels in <10s, switches instantly
 - **Real-time scoring**: Latency + packet loss + jitter + stability weighted formula
 - **Self-healing**: Recovers from cascading failures without manual intervention
+
+### Professional CLI with Cobra
+- **`spf13/cobra`** framework for clean command structure
+- Subcommands: `connect`, `status`, `tunnels`, `dashboard`, `tui`, `version`
+- Persistent flags: `--user`, `--port`, `--mode`, `--transports`, `--quiet`
+- Auto-generated shell completions
 
 ### Zero-Config Remote Provisioning
 No agent or software required on the remote server:
@@ -273,12 +304,11 @@ No agent or software required on the remote server:
 - **Auto-configure**: Generates keys, configs, and starts services
 - **Auto-teardown**: Cleans up everything on disconnect
 
-### Production-Grade Observability
-- **Prometheus metrics** at `/metrics` endpoint
-- **Hot-reload config** via file watcher (5s polling)
-- **Token bucket rate limiting** per transport
-- **Internal DNS resolver** with caching (300s TTL)
-- **Audit logging** with JSON-structured events
+### Comprehensive Testing
+- **65+ unit tests** with mock transports
+- **Race detection** in CI/CD
+- **Concurrent connection tests** verify parallel behavior
+- **Timeout tests** ensure no infinite hangs
 
 ---
 
